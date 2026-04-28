@@ -211,8 +211,9 @@ def main():
         current = close.iloc[-1]
 
         # 価格予測
+        # 価格予測
         pred = predict_price(close)
-        if pred is None:
+        if pred is None or isinstance(pred, pd.Series):
             continue  # ← これが超重要
 
         pred_adj = volatility_adjust(df, pred, current)
