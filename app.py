@@ -39,7 +39,7 @@ WATCHLIST = {
     "三菱HCキャピタル": "8593",
     "クオリプス": "4894",
     "トリケミカル": "4369",
-    "パワーエックス": "485A",
+    #"パワーエックス": "485A",
     "iシェアーズオートメーション&ロボットETF": "2522",
     "nikkei": "1321.T",
     "topix": "1306.T"
@@ -72,16 +72,22 @@ def predict_price(close):
 
     # 線形回帰
     a1, b1 = np.polyfit(t, y, 1)
-    pred_linear = float(a1) * (N + 1) + float(b1)
+    a1 = a1.item()
+    b1 = b1.item()
+    pred_linear = a1 * (N + 1) + b1
 
     # 対数回帰
     y_log = np.log(y)
     a2, b2 = np.polyfit(t, y_log, 1)
-    pred_log = math.exp(float(a2) * (N + 1) + float(b2))
+    a2 = a2.item()
+    b2 = b2.item()
+    pred_log = math.exp(a2 * (N + 1) + b2)
 
     # 指数回帰
     a3, b3 = np.polyfit(t, np.log(y), 1)
-    pred_exp = math.exp(float(a3) * (N + 1) + float(b3))
+    a3 = a3.item()
+    b3 = b3.item()
+    pred_exp = math.exp(a3 * (N + 1) + b3)
 
     preds = [pred_linear, pred_log, pred_exp]
     preds = [p for p in preds if p > 0 and not math.isnan(p)]
