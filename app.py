@@ -221,12 +221,16 @@ def main():
             + news_score * 0.3
             + ai_score * 0.3
         )
+        print("DEBUG:", name, "pred:", pred, "pred_adj:", pred_adj)
 
         results.append((name, current, pred_adj, news_score, ai_score, total))
 
     # スコア順に並べる
     results.sort(key=lambda x: x[5], reverse=True)
-
+    if len(results) == 0:
+        msg = "【未来志向スコアランキング】\nデータ取得に失敗しました。"
+        send_line(msg)
+        return
     # LINEメッセージ
     msg = "【未来志向スコアランキング】\n"
     for r in results:
@@ -237,6 +241,7 @@ def main():
         )
 
     send_line(msg)
+print("DEBUG_RESULTS_COUNT:", len(results))
 
 if __name__ == "__main__":
     main()
