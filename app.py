@@ -78,22 +78,22 @@ def predict_price(close):
     N = len(y)
     t = np.arange(1, N + 1)
 
-    # --- 線形回帰 ---
+    # 線形回帰
     a1, b1 = np.polyfit(t, y, 1)
-    pred_linear = a1 * (N + 1) + b1
+    pred_linear = float(a1) * (N + 1) + float(b1)
 
-    # --- 対数回帰（log(y) = a t + b）---
+    # 対数回帰
     y_log = np.log(y)
     a2, b2 = np.polyfit(t, y_log, 1)
-    pred_log = math.exp(a2 * (N + 1) + b2)
+    pred_log = math.exp(float(a2) * (N + 1) + float(b2))
 
-    # --- 指数回帰（y = exp(a t + b）---
+    # 指数回帰
     a3, b3 = np.polyfit(t, np.log(y), 1)
-    pred_exp = math.exp(a3 * (N + 1) + b3)
+    pred_exp = math.exp(float(a3) * (N + 1) + float(b3))
 
-    # 平均を採用
     preds = [pred_linear, pred_log, pred_exp]
     preds = [p for p in preds if p > 0 and not math.isnan(p)]
+
     if len(preds) == 0:
         return None
 
@@ -213,7 +213,7 @@ def main():
         # 価格予測
         pred = predict_price(close)
         if pred is None:
-            continue  # ← 追加（重要）
+            continue  # ← これが超重要
 
         pred_adj = volatility_adjust(df, pred, current)
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
