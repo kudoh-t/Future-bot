@@ -199,12 +199,20 @@ def main():
         pred = predict_price(close)
         if pred is None:
             continue
+
+        # ★ Series → float 強制
+        if isinstance(pred, pd.Series):
+            pred = pred.iloc[0]
         pred = float(pred)
 
         pred_adj = volatility_adjust(df, pred, current)
         if pred_adj is None:
             continue
-        pred_adj = float(pred_adj)
+
+# ★ Series → float 強制
+if isinstance(pred_adj, pd.Series):
+    pred_adj = pred_adj.iloc[0]
+pred_adj = float(pred_adj)
 
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
