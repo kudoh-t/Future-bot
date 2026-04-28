@@ -199,10 +199,12 @@ def main():
         pred = predict_price(close)
         if pred is None:
             continue
+        pred = float(pred)
 
         pred_adj = volatility_adjust(df, pred, current)
         if pred_adj is None:
             continue
+        pred_adj = float(pred_adj)
 
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
