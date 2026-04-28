@@ -46,6 +46,9 @@ WATCHLIST = {
     "トリケミカル": "4369",
     "パワーエックス": "485A",
     "iシェアーズオートメーション&ロボットETF": "2522",
+    "nikkei": "1321.T",
+    "topix": "1306.T"
+
 }
 
 LOOKBACK = 60
@@ -91,6 +94,9 @@ def predict_price(close):
     # 平均を採用
     preds = [pred_linear, pred_log, pred_exp]
     preds = [p for p in preds if p > 0 and not math.isnan(p)]
+    if len(preds) == 0:
+        return None
+
     return sum(preds) / len(preds)
 
 
@@ -206,10 +212,13 @@ def main():
 
         # 価格予測
         pred = predict_price(close)
+        if pred is None:
+            continue  # ← 追加（重要）
+
         pred_adj = volatility_adjust(df, pred, current)
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
-        # ニュース（ここはダミー：後でRSS連携可能）
+        # ニュース（ダミー）
         news_text = f"{name} が設備投資を拡大し、新工場を建設する計画が報じられた。"
         news_score = news_future_score(news_text)
 
