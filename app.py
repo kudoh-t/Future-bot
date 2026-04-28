@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-app.py — 未来志向の株価予測（強化版）
+app.py — 未来志向の株価予測（強化版・完全修正版）
 """
 
 import os
@@ -39,7 +39,6 @@ WATCHLIST = {
     "三菱HCキャピタル": "8593",
     "クオリプス": "4894",
     "トリケミカル": "4369",
-    #"パワーエックス": "485A",
     "iシェアーズオートメーション&ロボットETF": "2522",
     "nikkei": "1321.T",
     "topix": "1306.T"
@@ -66,47 +65,48 @@ def fetch_price(ticker):
 # 価格予測（3モデル）
 # ============================
 def predict_price(close):
-    y = close.values.astype(float)
-    N = len(y)
-    t = np.arange(1, N + 1)
+    try:
+        y = close.values.astype(float)
+        N = len(y)
+        t = np.arange(1, N + 1)
 
-    # 線形回帰
-    a1, b1 = np.polyfit(t, y, 1)
-    a1 = a1.item()
-    b1 = b1.item()
-    pred_linear = a1 * (N + 1) + b1
+        # 線形回帰
+        a1, b1 = np.polyfit(t, y, 1)
+        pred_linear = a1 * (N + 1) + b1
 
-    # 対数回帰
-    y_log = np.log(y)
-    a2, b2 = np.polyfit(t, y_log, 1)
-    a2 = a2.item()
-    b2 = b2.item()
-    pred_log = math.exp(a2 * (N + 1) + b2)
+        # 対数回帰
+        y_log = np.log(y)
+        a2, b2 = np.polyfit(t, y_log, 1)
+        pred_log = math.exp(a2 * (N + 1) + b2)
 
-    # 指数回帰
-    a3, b3 = np.polyfit(t, np.log(y), 1)
-    a3 = a3.item()
-    b3 = b3.item()
-    pred_exp = math.exp(a3 * (N + 1) + b3)
+        # 指数回帰
+        a3, b3 = np.polyfit(t, np.log(y), 1)
+        pred_exp = math.exp(a3 * (N + 1) + b3)
 
-    preds = [pred_linear, pred_log, pred_exp]
-    preds = [p for p in preds if p > 0 and not math.isnan(p)]
+        preds = [pred_linear, pred_log, pred_exp]
+        preds = [p for p in preds if p > 0 and not math.isnan(p)]
 
-    if len(preds) == 0:
+        if len(preds) == 0:
+            return None
+
+        return sum(preds) / len(preds)
+
+    except Exception:
         return None
-
-    return sum(preds) / len(preds)
 
 # ============================
 # ボラティリティ補正（ATR-lite）
 # ============================
 def volatility_adjust(df, predicted, current):
-    if predicted is None:
+    try:
+        if predicted is None:
+            return None
+        df["HL"] = df["High"] - df["Low"]
+        atr = df["HL"].mean()
+        vol_factor = 1 + (atr / current) * 0.5
+        return predicted / vol_factor
+    except Exception:
         return None
-    df["HL"] = df["High"] - df["Low"]
-    atr = df["HL"].mean()
-    vol_factor = 1 + (atr / current) * 0.5
-    return predicted / vol_factor
 
 # ============================
 # ニュース未来志向ワード抽出
@@ -164,7 +164,7 @@ reason: 簡潔な理由
         return 0
 
 # ============================
-# LINE Messaging API
+# LINE Messaging API（長文対応）
 # ============================
 def send_line(text):
     token = os.environ.get("CHANNEL_ACCESS_TOKEN")
@@ -173,9 +173,8 @@ def send_line(text):
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # 5000文字制限対策：2000文字ごとに分割
+    # 長文を安全に分割
     chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
-
     messages = [{"type": "text", "text": chunk} for chunk in chunks]
 
     payload = {"to": user_id, "messages": messages}
@@ -197,41 +196,42 @@ def main():
         close = df["Close"]
         current = close.iloc[-1]
 
-        # 価格予測
         pred = predict_price(close)
-        if pred is None or isinstance(pred, pd.Series):
+        if pred is None:
             continue
 
         pred_adj = volatility_adjust(df, pred, current)
-        if pred_adj is None or isinstance(pred_adj, pd.Series):
-            continue  # ← 今回のエラーの本丸対策
+        if pred_adj is None:
+            continue
 
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
-        # ニュース（ダミー）
         news_text = f"{name} が設備投資を拡大し、新工場を建設する計画が報じられた。"
         news_score = news_future_score(news_text)
 
-        # Copilot未来方向性
         ai_score = copilot_future_score(name, news_text, trend_info)
 
-        # 総合スコア
         total = (
             ((pred_adj / current - 1) * 100) * 0.4
             + news_score * 0.3
             + ai_score * 0.3
         )
-        print("DEBUG:", name, "pred:", pred, "pred_adj:", pred_adj)
 
         results.append((name, current, pred_adj, news_score, ai_score, total))
 
-    # スコア順に並べる
+    # 並べ替え
     results.sort(key=lambda x: x[5], reverse=True)
+
+    # ★ デバッグ
+    print("DEBUG_RESULTS_COUNT:", len(results))
+
+    # ★ 結果ゼロなら通知して終了
     if len(results) == 0:
         msg = "【未来志向スコアランキング】\nデータ取得に失敗しました。"
         send_line(msg)
         return
-    # LINEメッセージ
+
+    # 通知本文生成
     msg = "【未来志向スコアランキング】\n"
     for r in results:
         msg += (
@@ -241,7 +241,6 @@ def main():
         )
 
     send_line(msg)
-print("DEBUG_RESULTS_COUNT:", len(results))
 
 if __name__ == "__main__":
     main()
