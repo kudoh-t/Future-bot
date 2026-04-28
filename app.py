@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """
 app.py — 未来志向の株価予測（強化版）
-- 価格予測：対数回帰・指数回帰・線形回帰の3モデル
-- ボラティリティ補正：ATRベース
-- ニュース未来志向ワード抽出：スコア化
-- Copilot（AI）に未来方向性を評価させる
-- 総合スコアをLINE Messaging APIで通知
 """
 
 import os
@@ -48,11 +43,9 @@ WATCHLIST = {
     "iシェアーズオートメーション&ロボットETF": "2522",
     "nikkei": "1321.T",
     "topix": "1306.T"
-
 }
 
 LOOKBACK = 60
-
 
 # ============================
 # 価格データ取得
@@ -68,7 +61,6 @@ def fetch_price(ticker):
     if df.empty:
         return None
     return df.tail(LOOKBACK)
-
 
 # ============================
 # 価格予測（3モデル）
@@ -99,32 +91,24 @@ def predict_price(close):
 
     return sum(preds) / len(preds)
 
-
 # ============================
 # ボラティリティ補正（ATR-lite）
 # ============================
 def volatility_adjust(df, predicted, current):
+    if predicted is None:
+        return None
     df["HL"] = df["High"] - df["Low"]
     atr = df["HL"].mean()
     vol_factor = 1 + (atr / current) * 0.5
     return predicted / vol_factor
 
-
 # ============================
 # ニュース未来志向ワード抽出
 # ============================
 FUTURE_WORDS = {
-    "増産": 2,
-    "受注": 2,
-    "設備投資": 3,
-    "新工場": 3,
-    "AI": 2,
-    "半導体": 2,
-    "需要拡大": 3,
-    "黒字転換": 3,
-    "上方修正": 3,
-    "戦略提携": 2,
-    "大型契約": 3,
+    "増産": 2, "受注": 2, "設備投資": 3, "新工場": 3,
+    "AI": 2, "半導体": 2, "需要拡大": 3, "黒字転換": 3,
+    "上方修正": 3, "戦略提携": 2, "大型契約": 3,
 }
 
 def news_future_score(text):
@@ -134,14 +118,10 @@ def news_future_score(text):
             score += s
     return score
 
-
 # ============================
 # Copilot に未来方向性を評価させる
 # ============================
 def copilot_future_score(name, news_text, trend_info):
-    """
-    Copilot に「未来方向性」を評価させる
-    """
     prompt = f"""
 あなたは金融アナリストです。
 以下の銘柄について、未来方向性を -5〜+5 で評価してください。
@@ -155,7 +135,6 @@ score: 数値
 reason: 簡潔な理由
 """
 
-    # Copilot API（あなたの predict_ai.py と同じ構造でOK）
     url = "https://api.githubcopilot.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {os.environ.get('COPILOT_API_KEY')}",
@@ -171,14 +150,12 @@ reason: 簡潔な理由
         data = r.json()
         text = data["choices"][0]["message"]["content"]
 
-        # score: X を抽出
         import re
         m = re.search(r"score:\s*([-+]?\d+)", text)
         score = int(m.group(1)) if m else 0
         return score
     except:
         return 0
-
 
 # ============================
 # LINE Messaging API
@@ -192,7 +169,6 @@ def send_line(text):
     payload = {"to": user_id, "messages": [{"type": "text", "text": text}]}
 
     requests.post(url, headers=headers, json=payload)
-
 
 # ============================
 # メイン処理
@@ -211,12 +187,14 @@ def main():
         current = close.iloc[-1]
 
         # 価格予測
-        # 価格予測
         pred = predict_price(close)
         if pred is None or isinstance(pred, pd.Series):
-            continue  # ← これが超重要
+            continue
 
         pred_adj = volatility_adjust(df, pred, current)
+        if pred_adj is None or isinstance(pred_adj, pd.Series):
+            continue  # ← 今回のエラーの本丸対策
+
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
         # ニュース（ダミー）
@@ -248,7 +226,6 @@ def main():
         )
 
     send_line(msg)
-
 
 if __name__ == "__main__":
     main()
