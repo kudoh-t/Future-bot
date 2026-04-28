@@ -172,8 +172,13 @@ def send_line(text):
 
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    payload = {"to": user_id, "messages": [{"type": "text", "text": text}]}
 
+    # 5000文字制限対策：2000文字ごとに分割
+    chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
+
+    messages = [{"type": "text", "text": chunk} for chunk in chunks]
+
+    payload = {"to": user_id, "messages": messages}
     requests.post(url, headers=headers, json=payload)
 
 # ============================
