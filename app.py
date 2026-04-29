@@ -39,9 +39,11 @@ WATCHLIST = {
     "クオリプス": "4894",
     "トリケミカル": "4369",
     "iシェアーズオートメーション&ロボットETF": "2522",
-    "nikkei": "1321.T",
-    "topix": "1306.T"
+    "nikkei": "NIKKEI225",   # 文字列扱いにする
+    "topix": "TOPIXETF",
+
 }
+
 
 LOOKBACK = 60
 
@@ -153,14 +155,41 @@ reason: 簡潔な理由
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         data = r.json()
-        text = data["choices"][0]["message"]["content"]
+
+        # choices がなければ即 0
+        if "choices" not in data or not data["choices"]:
+            return 0
+
+        choice = data["choices"][0]
+
+        # Copilot / GPT 系のいろいろな形式に対応
+        text = ""
+
+        if isinstance(choice, dict):
+            if "message" in choice and isinstance(choice["message"], dict):
+                # OpenAI Chat 互換形式
+                text = choice["message"].get("content", "")
+            elif "messages" in choice and isinstance(choice["messages"], list) and choice["messages"]:
+                # Copilot 独自の messages 配列形式
+                msg0 = choice["messages"][0]
+                if isinstance(msg0, dict):
+                    text = msg0.get("content", "")
+            elif "delta" in choice and isinstance(choice["delta"], dict):
+                # ストリーミング風 delta 形式
+                text = choice["delta"].get("content", "")
+
+        if not text:
+            return 0
 
         import re
         m = re.search(r"score:\s*([-+]?\d+)", text)
         score = int(m.group(1)) if m else 0
         return score
-    except:
+
+    except Exception:
         return 0
+
+
 
 # ============================
 # LINE Messaging API（長文対応）
@@ -184,8 +213,21 @@ def send_line(text):
 def main():
     results = []
 
+    # ★ ETF マッピング（指数を正しく扱う）
+    ETF_MAP = {
+        "NIKKEI225": "1321.T",   # 日経225 ETF
+        "TOPIXETF": "1306.T",    # TOPIX ETF
+    }
+
     for name, code in WATCHLIST.items():
-        ticker = f"{code}.T" if code.isdigit() else code
+
+        # ★ ticker の決定ロジック（最重要）
+        if code in ETF_MAP:
+            ticker = ETF_MAP[code]
+        elif code.isdigit():
+            ticker = f"{code}.T"
+        else:
+            ticker = code
 
         df = fetch_price(ticker)
         if df is None:
@@ -194,6 +236,7 @@ def main():
         close = df["Close"]
         current = float(close.iloc[-1])
 
+        # 価格予測
         pred = predict_price(close)
         if pred is None:
             continue
@@ -203,6 +246,7 @@ def main():
             pred = pred.iloc[0]
         pred = float(pred)
 
+        # ボラティリティ補正
         pred_adj = volatility_adjust(df, pred, current)
         if pred_adj is None:
             continue
@@ -214,11 +258,14 @@ def main():
 
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
+        # ニュース（仮）
         news_text = f"{name} が設備投資を拡大し、新工場を建設する計画が報じられた。"
         news_score = news_future_score(news_text)
 
+        # ★ Copilot API（AIスコア）堅牢パース版
         ai_score = copilot_future_score(name, news_text, trend_info)
 
+        # 総合スコア
         total = (
             ((pred_adj / current - 1) * 100) * 0.4
             + news_score * 0.3
@@ -233,6 +280,7 @@ def main():
     # デバッグ
     print("DEBUG_RESULTS_COUNT:", len(results))
 
+    # 結果ゼロなら通知
     if len(results) == 0:
         send_line("【未来志向スコアランキング】\nデータ取得に失敗しました。")
         return
@@ -247,6 +295,7 @@ def main():
         )
 
     send_line(msg)
+
 
 if __name__ == "__main__":
     main()
