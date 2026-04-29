@@ -179,8 +179,14 @@ reason: <理由>
         score = int(m.group(1)) if m else 0
         return score
 
-    except Exception:
+    except Exception as e:
+        print("COPILOT_ERROR:", e)
+        try:
+            print("COPILOT_API_RAW:", data)
+        except:
+            print("COPILOT_API_RAW: <no data>")
         return 0
+
 
 
 
