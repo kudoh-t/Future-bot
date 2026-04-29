@@ -158,6 +158,7 @@ reason: <理由>
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         data = r.json()
+        print("COPILOT_API_RAW:", data)
 
         choice = data["choices"][0]
 
