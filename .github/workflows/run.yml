@@ -27,7 +27,8 @@ jobs:
         env:
           CHANNEL_ACCESS_TOKEN: ${{ secrets.CHANNEL_ACCESS_TOKEN }}
           USER_ID: ${{ secrets.USER_ID }}
-          COPILOT_API_KEY: ${{ secrets.COPILOT_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # ← これが必要
         run: |
           python app.py
+
 
