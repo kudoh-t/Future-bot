@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
 """
-app.py — 未来志向の株価予測（まとめ評価・完全版）
+app.py — 未来志向の株価予測
+祝日対応＋業界別ニュース＋金利ワード対応＋OpenAIまとめ評価（1回）
 """
+
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 import os
 import math
+import json
+import datetime
+
 import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-import json
+import jpholiday
+
+# ============================
+# 祝日判定
+# ============================
+def is_japanese_holiday():
+    today = datetime.date.today()
+    return jpholiday.is_holiday(today)
 
 # ============================
 # 監視銘柄
@@ -50,9 +62,100 @@ WATCHLIST = {
 LOOKBACK = 60
 
 # ============================
+# 業界マップ
+# ============================
+SECTOR_MAP = {
+    "三菱重工": "heavy",
+    "INPEX": "heavy",
+    "三井海洋": "heavy",
+    "日揮": "heavy",
+    "三菱ガス化学": "heavy",
+    "住友電工": "heavy",
+
+    "村田製作所": "semi",
+    "信越化学": "semi",
+    "トリケミカル": "semi",
+    "クオリプス": "semi",
+    "ロボットETF": "semi",
+    "iシェアーズオートメーション&ロボットETF": "semi",
+
+    "三井住友FG": "finance",
+    "三菱UFJ": "finance",
+    "千葉銀行": "finance",
+    "三菱HCキャピタル": "finance",
+    "オリックス": "finance",
+
+    "伊藤忠": "trading",
+    "三菱商事": "trading",
+
+    "NTT": "telecom",
+    "KDDI": "telecom",
+
+    "イオン": "retail",
+
+    "純金信託": "etf",
+    "nikkei": "etf",
+    "topix": "etf",
+}
+
+# ============================
+# 業界別ニュース生成
+# ============================
+def generate_news(name: str) -> str:
+    sector = SECTOR_MAP.get(name, "other")
+
+    if sector == "heavy":
+        return f"{name} が大型プロジェクトの受注拡大やエネルギー関連投資を強化しているとの報道があった。"
+    if sector == "semi":
+        return f"{name} が半導体需要の増加に対応するため生産能力を拡大し、次世代デバイス向け投資を強化していると報じられた。"
+    if sector == "finance":
+        return f"{name} が金利動向を踏まえた融資戦略や資産運用部門の強化を進めているとの報道があった。"
+    if sector == "trading":
+        return f"{name} が資源・非資源分野での投資を拡大し、グローバル事業の収益力向上を目指す動きが報じられた。"
+    if sector == "telecom":
+        return f"{name} が次世代通信インフラへの投資を強化し、法人向けサービスの拡大を進めていると報じられた。"
+    if sector == "retail":
+        return f"{name} がデジタル戦略や物流効率化を進め、収益改善に向けた取り組みを強化していると報じられた。"
+    if sector == "etf":
+        return "市場全体で投資家のリスク選好が変化し、関連指数に影響を与える動きが報じられた。"
+
+    return f"{name} に関する前向きな事業展開が報じられた。"
+
+# ============================
+# FUTURE_WORDS（金利ワード追加版）
+# ============================
+FUTURE_WORDS = {
+    # 成長・設備・需要
+    "増産": 2, "受注": 2, "設備投資": 3, "新工場": 3,
+    "AI": 2, "半導体": 2, "需要拡大": 3, "黒字転換": 3,
+    "上方修正": 3, "戦略提携": 2, "大型契約": 3,
+
+    # 金利・金融政策
+    "金利上昇": 3,
+    "金利低下": -2,
+    "利上げ": 3,
+    "利下げ": -2,
+    "金融緩和": -1,
+    "金融引き締め": 2,
+    "長短金利差拡大": 3,
+    "長短金利差縮小": -2,
+    "国債利回り上昇": 2,
+    "国債利回り低下": -1,
+    "日銀": 1,
+    "政策金利": 2,
+}
+
+def news_future_score(text: str) -> int:
+    score = 0
+    for w, s in FUTURE_WORDS.items():
+        if w in text:
+            score += s
+    return score
+
+# ============================
 # 価格データ取得
 # ============================
-def fetch_price(ticker):
+def fetch_price(ticker: str):
     df = yf.download(
         ticker,
         period=f"{LOOKBACK + 10}d",
@@ -67,7 +170,7 @@ def fetch_price(ticker):
 # ============================
 # 価格予測（3モデル）
 # ============================
-def predict_price(close):
+def predict_price(close: pd.Series):
     try:
         y = close.values.astype(float)
         N = len(y)
@@ -97,7 +200,7 @@ def predict_price(close):
 # ============================
 # ボラティリティ補正
 # ============================
-def volatility_adjust(df, predicted, current):
+def volatility_adjust(df: pd.DataFrame, predicted: float, current: float):
     try:
         if predicted is None:
             return None
@@ -109,31 +212,13 @@ def volatility_adjust(df, predicted, current):
         return None
 
 # ============================
-# ニュース未来志向ワード抽出
-# ============================
-FUTURE_WORDS = {
-    "増産": 2, "受注": 2, "設備投資": 3, "新工場": 3,
-    "AI": 2, "半導体": 2, "需要拡大": 3, "黒字転換": 3,
-    "上方修正": 3, "戦略提携": 2, "大型契約": 3,
-}
-
-def news_future_score(text):
-    score = 0
-    for w, s in FUTURE_WORDS.items():
-        if w in text:
-            score += s
-    return score
-
-# ============================
-# ★ まとめ評価版 AI スコア
+# OpenAI まとめ評価（1回）
 # ============================
 def copilot_future_score_batch(items):
-    """
-    items = [
-        {"name": "...", "news": "...", "trend": "..."},
-        ...
-    ]
-    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("OPENAI_ERROR: OPENAI_API_KEY is not set", flush=True)
+        return []
 
     prompt = f"""
 あなたは金融アナリストです。
@@ -158,7 +243,7 @@ def copilot_future_score_batch(items):
 
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -172,6 +257,10 @@ def copilot_future_score_batch(items):
         data = r.json()
         print("OPENAI_API_RAW:", data, flush=True)
 
+        if "error" in data:
+            print("OPENAI_ERROR_MSG:", data["error"], flush=True)
+            return []
+
         text = data["choices"][0]["message"]["content"]
         print("OPENAI_RAW_RESPONSE:", text, flush=True)
 
@@ -184,9 +273,13 @@ def copilot_future_score_batch(items):
 # ============================
 # LINE Messaging API
 # ============================
-def send_line(text):
+def send_line(text: str):
     token = os.environ.get("CHANNEL_ACCESS_TOKEN")
     user_id = os.environ.get("USER_ID")
+
+    if not token or not user_id:
+        print("LINE_ERROR: token or user_id missing")
+        return
 
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -195,12 +288,21 @@ def send_line(text):
     messages = [{"type": "text", "text": chunk} for chunk in chunks]
 
     payload = {"to": user_id, "messages": messages}
-    requests.post(url, headers=headers, json=payload)
+    try:
+        requests.post(url, headers=headers, json=payload, timeout=10)
+    except Exception as e:
+        print("LINE_ERROR:", e, flush=True)
 
 # ============================
-# メイン処理（まとめ評価版）
+# メイン処理
 # ============================
 def main():
+
+    # 祝日スキップ
+    if is_japanese_holiday():
+        print("今日は祝日 → スキップ")
+        return
+
     temp_results = []
     items_for_ai = []
 
@@ -242,28 +344,32 @@ def main():
         pred_adj = float(pred_adj)
 
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
-        news_text = f"{name} が設備投資を拡大し、新工場を建設する計画が報じられた。"
+        news_text = generate_news(name)
         news_score = news_future_score(news_text)
 
         items_for_ai.append({
             "name": name,
             "news": news_text,
-            "trend": trend_info
+            "trend": trend_info,
         })
 
         temp_results.append({
             "name": name,
             "current": current,
             "pred_adj": pred_adj,
-            "news_score": news_score
+            "news_score": news_score,
         })
 
-    # ★ AI を 1 回だけ呼ぶ
+    # OpenAI を 1回だけ呼ぶ
     ai_results = copilot_future_score_batch(items_for_ai)
-    ai_map = {item["name"]: item["score"] for item in ai_results}
+    ai_map = {}
+    for item in ai_results:
+        try:
+            ai_map[item["name"]] = int(item["score"])
+        except Exception:
+            continue
 
     results = []
-
     for item in temp_results:
         name = item["name"]
         current = item["current"]
@@ -288,7 +394,7 @@ def main():
         send_line("【未来志向スコアランキング】\nデータ取得に失敗しました。")
         return
 
-    msg = "【未来志向スコアランキング】\n"
+    msg = "【未来志向スコアランキング（前場終値ベース）】\n"
     for r in results:
         msg += (
             f"{r[0]}：総合 {r[5]:+.2f}\n"
@@ -297,6 +403,7 @@ def main():
         )
 
     send_line(msg)
+
 
 if __name__ == "__main__":
     main()

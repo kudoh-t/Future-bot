@@ -22,6 +22,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install yfinance requests numpy pandas
+          pip install jpholiday
 
       - name: Run app.py
         env:
