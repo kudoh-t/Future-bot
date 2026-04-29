@@ -2,6 +2,9 @@
 """
 app.py — 未来志向の株価予測（完全修正版）
 """
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 import os
 import math
