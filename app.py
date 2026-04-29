@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-app.py — 未来志向の株価予測（完全統合版）
+app.py — 未来志向の株価予測（完全統合版・最終版）
 祝日対応＋手動実行時は祝日スキップ無効
-銘柄別ニュース＋金利ワード対応
+銘柄別ニュース＋ニュースソース＋金利ワード対応
 OpenAI まとめ評価（1回）
-Top7 レポート形式でLINE通知
+Top7 レポート形式＋市況コメント付きでLINE通知
 """
 
 import warnings
@@ -22,11 +22,13 @@ import requests
 import yfinance as yf
 import jpholiday
 
+
 # ============================
 # 手動実行判定
 # ============================
 def is_manual_run():
     return os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+
 
 # ============================
 # 祝日スキップ判定
@@ -36,6 +38,7 @@ def should_skip_today():
         print("手動実行のため祝日スキップを無効化します")
         return False
     return jpholiday.is_holiday(datetime.date.today())
+
 
 # ============================
 # 監視銘柄
@@ -72,6 +75,7 @@ WATCHLIST = {
 
 LOOKBACK = 60
 
+
 # ============================
 # 銘柄別ニューステンプレート
 # ============================
@@ -107,7 +111,7 @@ NEWS_TEMPLATES = {
     # 小売
     "イオン": "{name} が物流改革とデジタル戦略を進め、収益改善が期待されるとの報道。",
 
-    # 重工・素材など（ざっくりだが方向性は合わせる）
+    # 重工・素材など
     "三菱重工": "{name} が防衛・エネルギー関連事業の受注拡大と設備投資を進めているとの報道。",
     "三菱ガス化学": "{name} が高付加価値化学品の増産投資を進めているとの報道。",
     "住友電工": "{name} がEV向け部材や電力インフラ関連の需要拡大に対応する投資を進めているとの報道。",
@@ -119,10 +123,52 @@ NEWS_TEMPLATES = {
     "topix": "TOPIX が幅広い銘柄への資金流入を背景に底堅い動きを見せているとの報道。",
 }
 
+
+# ============================
+# ニュースソース
+# ============================
+NEWS_SOURCE = {
+    "INPEX": "（出所：ロイター中東エネルギー）",
+    "三井海洋": "（出所：日経・海洋エネルギー特集）",
+    "日揮": "（出所：ロイター・プラント業界）",
+
+    "村田製作所": "（出所：日経・電子部品）",
+    "信越化学": "（出所：ロイター半導体）",
+    "トリケミカル": "（出所：EE Times Japan）",
+    "クオリプス": "（出所：日経クロステック）",
+    "ロボットETF": "（出所：Bloomberg Robotics）",
+    "iシェアーズオートメーション&ロボットETF": "（出所：Bloomberg Robotics）",
+
+    "三井住友FG": "（出所：日経・金融）",
+    "三菱UFJ": "（出所：ロイター金融）",
+    "千葉銀行": "（出所：日経・地銀特集）",
+    "オリックス": "（出所：日経・金融）",
+    "三菱HCキャピタル": "（出所：ロイター航空リース）",
+
+    "伊藤忠": "（出所：日経・商社）",
+    "三菱商事": "（出所：ロイター資源）",
+
+    "NTT": "（出所：日経・通信）",
+    "KDDI": "（出所：日経・通信）",
+
+    "イオン": "（出所：日経MJ）",
+
+    "三菱重工": "（出所：日経・防衛産業）",
+    "三菱ガス化学": "（出所：化学工業日報）",
+    "住友電工": "（出所：日経・電線業界）",
+    "ヒューリック": "（出所：日経・不動産）",
+
+    "純金信託": "（出所：ロイター金市場）",
+    "nikkei": "（出所：日経平均概況）",
+    "topix": "（出所：東証市況）",
+}
+
+
 def generate_news(name: str) -> str:
-    if name in NEWS_TEMPLATES:
-        return NEWS_TEMPLATES[name].format(name=name)
-    return f"{name} に関する前向きな事業展開が報じられた。"
+    base = NEWS_TEMPLATES.get(name, f"{name} に関する前向きな事業展開が報じられた。")
+    source = NEWS_SOURCE.get(name, "（出所：日経）")
+    return f"{base} {source}"
+
 
 # ============================
 # FUTURE_WORDS（金利ワード追加版）
@@ -146,12 +192,14 @@ FUTURE_WORDS = {
     "政策金利": 2,
 }
 
+
 def news_future_score(text: str) -> int:
     score = 0
     for w, s in FUTURE_WORDS.items():
         if w in text:
             score += s
     return score
+
 
 # ============================
 # 価格データ取得
@@ -167,6 +215,7 @@ def fetch_price(ticker: str):
     if df.empty:
         return None
     return df.tail(LOOKBACK)
+
 
 # ============================
 # 価格予測（3モデル）
@@ -198,6 +247,7 @@ def predict_price(close: pd.Series):
     except Exception:
         return None
 
+
 # ============================
 # ボラティリティ補正
 # ============================
@@ -211,6 +261,41 @@ def volatility_adjust(df: pd.DataFrame, predicted: float, current: float):
         return predicted / vol_factor
     except Exception:
         return None
+
+
+# ============================
+# 市況コメント生成
+# ============================
+def describe_market_situation(current: float, pred_adj: float, price_5d_ago: float) -> str:
+    try:
+        if price_5d_ago <= 0 or current <= 0:
+            return "市況評価：データ不足。"
+
+        short_term_change = (current / price_5d_ago - 1) * 100
+        future_gap = (pred_adj / current - 1) * 100
+
+        # トレンド
+        if short_term_change > 3:
+            trend = "直近は上昇トレンド"
+        elif short_term_change < -3:
+            trend = "直近は下落トレンド"
+        else:
+            trend = "直近はもみ合い"
+
+        # 割安・割高感
+        if future_gap > 5:
+            val = "今後も上値余地が大きい水準"
+        elif future_gap > 0:
+            val = "やや上値余地のある水準"
+        elif future_gap > -3:
+            val = "概ね妥当な水準"
+        else:
+            val = "短期的な調整リスクが意識される水準"
+
+        return f"市況評価：{trend}（5日変化 {short_term_change:+.2f}%）、{val}（予測乖離 {future_gap:+.2f}%）。"
+    except Exception:
+        return "市況評価：算出エラー。"
+
 
 # ============================
 # OpenAI まとめ評価（1回）
@@ -271,6 +356,7 @@ def copilot_future_score_batch(items):
         print("OPENAI_ERROR:", e, flush=True)
         return []
 
+
 # ============================
 # LINE Messaging API
 # ============================
@@ -293,6 +379,7 @@ def send_line(text: str):
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         print("LINE_ERROR:", e, flush=True)
+
 
 # ============================
 # メイン処理
@@ -328,6 +415,12 @@ def main():
         close = df["Close"]
         current = float(close.iloc[-1])
 
+        # 5営業日前の終値（市況評価用）
+        if len(close) >= 6:
+            price_5d_ago = float(close.iloc[-6])
+        else:
+            price_5d_ago = current
+
         pred = predict_price(close)
         if pred is None:
             continue
@@ -360,6 +453,7 @@ def main():
             "pred_adj": pred_adj,
             "news_score": news_score,
             "news_text": news_text,
+            "price_5d_ago": price_5d_ago,
         })
 
     # OpenAI を 1回だけ呼ぶ
@@ -381,6 +475,7 @@ def main():
         pred_adj = item["pred_adj"]
         news_score = item["news_score"]
         news_text = item["news_text"]
+        price_5d_ago = item["price_5d_ago"]
 
         ai_score = ai_map.get(name, 0)
 
@@ -390,7 +485,11 @@ def main():
             + ai_score * 0.3
         )
 
-        results.append((name, current, pred_adj, news_score, ai_score, total, news_text))
+        market_comment = describe_market_situation(current, pred_adj, price_5d_ago)
+
+        results.append(
+            (name, current, pred_adj, news_score, ai_score, total, news_text, market_comment)
+        )
 
     results.sort(key=lambda x: x[5], reverse=True)
 
@@ -408,7 +507,7 @@ def main():
     msg = "【本日の推奨銘柄 Top7（前場終値ベース）】\n\n"
 
     for r in top7:
-        name, current, pred_adj, news_score, ai_score, total, news_text = r
+        name, current, pred_adj, news_score, ai_score, total, news_text, market_comment = r
         reason = ai_reason_map.get(name, "AI理由なし")
 
         msg += (
@@ -419,7 +518,8 @@ def main():
             f"  ニュース要約：{news_text}\n"
             f"  ニュース評価：{news_score}（FUTURE_WORDS反映）\n"
             f"  AI 判定：{ai_score}（未来方向性 -5〜+5）\n"
-            f"  └ 理由：{reason}\n\n"
+            f"  └ 理由：{reason}\n"
+            f"  {market_comment}\n\n"
         )
 
     send_line(msg)
