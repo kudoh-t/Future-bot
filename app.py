@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-
+import json
 # ============================
 # 監視銘柄
 # ============================
@@ -148,34 +148,24 @@ reason: <理由>
 上記以外の文章は一切書かないこと。
 """
 
-    url = "https://api.githubcopilot.com/v1/chat/completions"
+    url = "https://api.openai.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {os.environ.get('COPILOT_API_KEY')}",
+        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
         "Content-Type": "application/json",
     }
     payload = {
         "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
     }
 
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         data = r.json()
-        print("COPILOT_API_RAW:", data, flush=True)
+        print("OPENAI_API_RAW:", data, flush=True)
 
-        choice = data["choices"][0]
-
-        if "message" in choice:
-            text = choice["message"]["content"]
-        elif "messages" in choice:
-            text = choice["messages"][0]["content"]
-        elif "delta" in choice:
-            text = choice["delta"].get("content", "")
-        else:
-            return 0
-
-        # ★ Copilot の返答をログに出す（最重要）
-        print("COPILOT_RAW_RESPONSE:", text)
+        text = data["choices"][0]["message"]["content"]
+        print("OPENAI_RAW_RESPONSE:", text, flush=True)
 
         import re
         m = re.search(r"score:\s*([-+]?\d+)", text)
@@ -183,11 +173,7 @@ reason: <理由>
         return score
 
     except Exception as e:
-        print("COPILOT_ERROR:", e)
-        try:
-            print("COPILOT_API_RAW:", data, flush=True)
-        except:
-            print("COPILOT_API_RAW: <no data>")
+        print("OPENAI_ERROR:", e, flush=True)
         return 0
 
 
