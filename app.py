@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-app.py — Google RSS × 材料性スコア × セクター地合い × 出来高トレンド × Buy/中立/注意 × TOP3
+app.py — 個別株 TOP3 ＋ ETF 別枠
+Google RSS × 材料性スコア × セクター地合い × 出来高トレンド × Buy/中立/注意
+ETF は gap＋AI のみで評価
 """
 
 import warnings
@@ -60,13 +62,18 @@ WATCHLIST = {
     "住友電工": "5802",
     "イオン": "8267",
     "三菱ガス化学": "4182",
+
+    # ETF（別枠）
     "純金信託": "1540",
     "ロボットETF": "2638",
+    "iシェアーズオートメーション&ロボットETF": "2522",
+
     "三菱HCキャピタル": "8593",
     "クオリプス": "4894",
     "トリケミカル": "4369",
-    "iシェアーズオートメーション&ロボットETF": "2522",
 }
+
+ETF_LIST = ["1540", "2638", "2522"]
 
 LOOKBACK = 60
 
@@ -94,11 +101,13 @@ SECTOR_MAP = {
     "住友電工": "非鉄金属",
     "イオン": "小売",
     "三菱ガス化学": "化学",
-    "純金信託": "ETF",
-    "ロボットETF": "ETF",
     "三菱HCキャピタル": "その他金融",
     "クオリプス": "医薬品",
     "トリケミカル": "化学",
+
+    # ETF はセクターなし
+    "純金信託": "ETF",
+    "ロボットETF": "ETF",
     "iシェアーズオートメーション&ロボットETF": "ETF",
 }
 
@@ -118,7 +127,6 @@ def fetch_google_news_headlines(name):
             pub = entry.published_parsed
             pub_date = datetime.date(pub.tm_year, pub.tm_mon, pub.tm_mday)
 
-            # 今日＋昨日のニュース
             if pub_date >= today - datetime.timedelta(days=1):
                 headlines.append(entry.title)
 
@@ -126,19 +134,14 @@ def fetch_google_news_headlines(name):
 
 
 # ============================
-# 材料性スコア（相場仕様）
+# 材料性スコア
 # ============================
 NEWS_KEYWORDS = {
-    # 企業材料
     "上方修正": 3, "増益": 3, "黒字": 3, "受注": 3, "大型": 3,
     "設備投資": 2, "提携": 2, "新工場": 2,
     "EV": 1, "半導体": 1, "AI": 1,
-
-    # ネガティブ
     "下方修正": -3, "減益": -3, "赤字": -3, "不祥事": -3,
     "リコール": -2,
-
-    # 金融動向
     "利上げ": 3, "利下げ": -3,
     "金利上昇": 3, "金利低下": -2,
     "長期金利": 2, "短期金利": 1,
@@ -146,8 +149,6 @@ NEWS_KEYWORDS = {
     "金融引き締め": 3, "金融緩和": -2,
     "政策金利": 2,
     "日銀": 2, "FRB": 2, "ECB": 2, "FOMC": 3,
-
-    # 日本市場
     "日経平均": 2, "TOPIX": 2, "東証": 1,
     "買い越し": 2, "売り越し": -2,
     "海外勢": 2,
@@ -155,13 +156,9 @@ NEWS_KEYWORDS = {
     "決算": 2,
     "配当": 1,
     "自社株買い": 3,
-
-    # 海外市場
     "NYダウ": 2, "S&P500": 2, "ナスダック": 2,
     "米株": 2, "欧州株": 1, "中国株": 1,
     "上海総合": 1, "香港ハンセン": 1,
-
-    # コモディティ・為替
     "原油高": 3, "原油安": -3,
     "WTI": 2, "ブレント": 2,
     "ドル高": 2, "ドル安": -2,
@@ -179,23 +176,19 @@ def score_news_headlines(headlines):
 
 
 # ============================
-# 出来高トレンド
+# 出来高トレンド（安全版）
 # ============================
 def calc_volume_trend(df):
     if len(df) < 6:
         return 1.0
 
-    # 今日の出来高（Series/NaN → float）
-    today_raw = df["Volume"].iloc[-1]
     try:
-        today_vol = float(today_raw)
+        today_vol = float(df["Volume"].iloc[-1])
     except:
         today_vol = 0.0
 
-    # 過去5日平均（Series/NaN → float）
-    avg_raw = df["Volume"].iloc[-6:-1].mean()
     try:
-        avg5 = float(avg_raw)
+        avg5 = float(df["Volume"].iloc[-6:-1].mean())
     except:
         avg5 = 0.0
 
@@ -203,7 +196,6 @@ def calc_volume_trend(df):
         return 1.0
 
     return today_vol / avg5
-
 
 
 # ============================
@@ -320,19 +312,16 @@ def send_line(text: str):
 
 
 # ============================
-# Buy／中立／注意 分類（修正版）
+# Buy／中立／注意 分類
 # ============================
 def classify(gap, news_score, ai_score):
 
-    # Buy：強い銘柄（ニュース弱くてもOK）
     if gap > 3 and ai_score >= 1 and news_score >= -1:
         return "Buy"
 
-    # 中立：普通
     if 0 <= gap <= 3 and -1 <= ai_score <= 1:
         return "中立"
 
-    # 注意：弱い or リスク
     return "注意"
 
 
@@ -348,6 +337,9 @@ def main():
     temp_results = []
     items_for_ai = []
 
+    # -------------------------
+    # データ収集
+    # -------------------------
     for name, code in WATCHLIST.items():
 
         ticker = f"{code}.T"
@@ -358,22 +350,17 @@ def main():
         close = df["Close"]
         current = float(close.iloc[-1])
 
-        # 5営業日前の価格
         if len(close) >= 6:
             price_5d_ago = float(close.iloc[-6])
         else:
             price_5d_ago = current
 
-        # 5営業日前乖離率
         gap = (current / price_5d_ago - 1) * 100
 
-        # 出来高トレンド
         volume_trend = calc_volume_trend(df)
 
-        # セクター
         sector = SECTOR_MAP.get(name, "その他")
 
-        # Google RSS ニュース（今日＋昨日）
         headlines = fetch_google_news_headlines(name)
         news_score = score_news_headlines(headlines)
 
@@ -386,6 +373,7 @@ def main():
 
         temp_results.append({
             "name": name,
+            "code": code,
             "current": current,
             "gap": gap,
             "news_score": news_score,
@@ -394,14 +382,22 @@ def main():
             "sector": sector,
         })
 
+    # -------------------------
     # AI判定
+    # -------------------------
     ai_results = copilot_future_score_batch(items_for_ai)
     ai_map = {item["name"]: item["score"] for item in ai_results}
     ai_reason_map = {item["name"]: item["reason"] for item in ai_results}
 
-    results = []
+    # -------------------------
+    # 個別株と ETF を分離
+    # -------------------------
+    stock_results = []
+    etf_results = []
+
     for item in temp_results:
         name = item["name"]
+        code = item["code"]
         current = item["current"]
         gap = item["gap"]
         news_score = item["news_score"]
@@ -412,12 +408,22 @@ def main():
         ai_score = ai_map.get(name, 0)
         reason = ai_reason_map.get(name, "AI理由なし")
 
-        # セクター地合い
-        sector_trend = calc_sector_trend(sector, temp_results)
+        # ETF は別枠
+        if code in ETF_LIST:
+            etf_score = gap * 0.7 + ai_score * 0.3
+            etf_results.append({
+                "name": name,
+                "code": code,
+                "gap": gap,
+                "ai": ai_score,
+                "score": etf_score,
+            })
+            continue
 
+        # 個別株
+        sector_trend = calc_sector_trend(sector, temp_results)
         category = classify(gap, news_score, ai_score)
 
-        # 総合スコア（あなた仕様）
         total = (
             gap * 0.4 +
             news_score * 0.2 +
@@ -426,18 +432,18 @@ def main():
             sector_trend * 0.1
         )
 
-        results.append(
+        stock_results.append(
             (name, current, gap, news_score, ai_score, total,
              headlines, category, reason, volume_trend, sector_trend)
         )
 
-    # スコア順
-    results.sort(key=lambda x: x[5], reverse=True)
+    # -------------------------
+    # 個別株 TOP3
+    # -------------------------
+    stock_results.sort(key=lambda x: x[5], reverse=True)
+    top3 = stock_results[:3]
 
-    # TOP3
-    top3 = results[:3]
-
-    msg = "【本日の注目銘柄 TOP3（Buy／中立／注意）】\n\n"
+    msg = "【本日の注目銘柄 TOP3（個別株）】\n\n"
 
     for r in top3:
         name, current, gap, news_score, ai_score, total, headlines, category, reason, volume_trend, sector_trend = r
@@ -451,6 +457,21 @@ def main():
             f"材料：{headlines[0] if headlines else '（本日・昨日ニュースなし）'}\n"
             f"AI判定：{ai_score}（理由：{reason}）\n"
             f"総合スコア：{total:+.2f}\n\n"
+        )
+
+    # -------------------------
+    # ETF セクション
+    # -------------------------
+    msg += "【本日のETF 注目銘柄】\n\n"
+
+    etf_results.sort(key=lambda x: x["score"], reverse=True)
+
+    for e in etf_results:
+        msg += (
+            f"■ {e['name']}（{e['code']}）\n"
+            f"5営業日前乖離率：{e['gap']:+.2f}%\n"
+            f"AI判定：{e['ai']}\n"
+            f"ETFスコア：{e['score']:+.2f}\n\n"
         )
 
     send_line(msg)
