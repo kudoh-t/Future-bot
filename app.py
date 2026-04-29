@@ -3,6 +3,7 @@
 app.py — 未来志向の株価予測
 祝日対応＋業界別ニュース＋金利ワード対応＋OpenAIまとめ評価（1回）
 手動実行（workflow_dispatch）は祝日でも必ず実行
+Top7レポート形式でLINE通知
 """
 
 import warnings
@@ -114,19 +115,19 @@ def generate_news(name: str) -> str:
     sector = SECTOR_MAP.get(name, "other")
 
     if sector == "heavy":
-        return f"{name} が大型プロジェクトの受注拡大やエネルギー関連投資を強化しているとの報道があった。"
+        return f"{name} が大型プロジェクトの受注拡大やエネルギー関連投資を強化しているとの報道。"
     if sector == "semi":
-        return f"{name} が半導体需要の増加に対応するため生産能力を拡大し、次世代デバイス向け投資を強化していると報じられた。"
+        return f"{name} が半導体需要増加に対応し生産能力を拡大、次世代デバイス向け投資を強化との報道。"
     if sector == "finance":
-        return f"{name} が金利動向を踏まえた融資戦略や資産運用部門の強化を進めているとの報道があった。"
+        return f"{name} が金利動向を踏まえた融資戦略や資産運用部門の強化を進めているとの報道。"
     if sector == "trading":
-        return f"{name} が資源・非資源分野での投資を拡大し、グローバル事業の収益力向上を目指す動きが報じられた。"
+        return f"{name} が資源・非資源分野での投資を拡大し、収益力向上を目指す動きが報じられた。"
     if sector == "telecom":
-        return f"{name} が次世代通信インフラへの投資を強化し、法人向けサービスの拡大を進めていると報じられた。"
+        return f"{name} が次世代通信インフラ投資を強化し、法人向けサービス拡大を進めているとの報道。"
     if sector == "retail":
-        return f"{name} がデジタル戦略や物流効率化を進め、収益改善に向けた取り組みを強化していると報じられた。"
+        return f"{name} がデジタル戦略や物流効率化を進め、収益改善に向けた取り組みを強化との報道。"
     if sector == "etf":
-        return "市場全体で投資家のリスク選好が変化し、関連指数に影響を与える動きが報じられた。"
+        return "市場全体で投資家のリスク選好が変化し、指数に影響する動きが報じられた。"
 
     return f"{name} に関する前向きな事業展開が報じられた。"
 
@@ -370,9 +371,12 @@ def main():
     # OpenAI を 1回だけ呼ぶ
     ai_results = copilot_future_score_batch(items_for_ai)
     ai_map = {}
+    ai_reason_map = {}
+
     for item in ai_results:
         try:
             ai_map[item["name"]] = int(item["score"])
+            ai_reason_map[item["name"]] = item["reason"]
         except Exception:
             continue
 
@@ -401,12 +405,26 @@ def main():
         send_line("【未来志向スコアランキング】\nデータ取得に失敗しました。")
         return
 
-    msg = "【未来志向スコアランキング（前場終値ベース）】\n"
-    for r in results:
+    # ============================
+    # Top7 レポート形式
+    # ============================
+    top7 = results[:7]
+
+    msg = "【本日の推奨銘柄 Top7（前場終値ベース）】\n\n"
+
+    for r in top7:
+        name, current, pred_adj, news_score, ai_score, total = r
+
+        reason = ai_reason_map.get(name, "AI理由なし")
+
         msg += (
-            f"{r[0]}：総合 {r[5]:+.2f}\n"
-            f"  現在 {r[1]:.2f} → 予測 {r[2]:.2f}\n"
-            f"  ニュース {r[3]} / AI {r[4]}\n\n"
+            f"■ {name}\n"
+            f"  総合スコア：{total:+.2f}\n"
+            f"  現在値：{current:.2f} 円\n"
+            f"  予測値：{pred_adj:.2f} 円（乖離 {((pred_adj/current-1)*100):+.2f}%）\n"
+            f"  ニュース評価：{news_score}（業界別ニュース反映）\n"
+            f"  AI 判定：{ai_score}（未来方向性 -5〜+5）\n"
+            f"  └ 理由：{reason}\n\n"
         )
 
     send_line(msg)
