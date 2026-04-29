@@ -2,6 +2,7 @@
 """
 app.py — 未来志向の株価予測
 祝日対応＋業界別ニュース＋金利ワード対応＋OpenAIまとめ評価（1回）
+手動実行（workflow_dispatch）は祝日でも必ず実行
 """
 
 import warnings
@@ -20,11 +21,19 @@ import yfinance as yf
 import jpholiday
 
 # ============================
-# 祝日判定
+# 手動実行判定
 # ============================
-def is_japanese_holiday():
-    today = datetime.date.today()
-    return jpholiday.is_holiday(today)
+def is_manual_run():
+    return os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+
+# ============================
+# 祝日スキップ判定
+# ============================
+def should_skip_today():
+    if is_manual_run():
+        print("手動実行のため祝日スキップを無効化します")
+        return False
+    return jpholiday.is_holiday(datetime.date.today())
 
 # ============================
 # 監視銘柄
@@ -125,12 +134,10 @@ def generate_news(name: str) -> str:
 # FUTURE_WORDS（金利ワード追加版）
 # ============================
 FUTURE_WORDS = {
-    # 成長・設備・需要
     "増産": 2, "受注": 2, "設備投資": 3, "新工場": 3,
     "AI": 2, "半導体": 2, "需要拡大": 3, "黒字転換": 3,
     "上方修正": 3, "戦略提携": 2, "大型契約": 3,
 
-    # 金利・金融政策
     "金利上昇": 3,
     "金利低下": -2,
     "利上げ": 3,
@@ -298,8 +305,8 @@ def send_line(text: str):
 # ============================
 def main():
 
-    # 祝日スキップ
-    if is_japanese_holiday():
+    # 祝日スキップ（ただし手動実行は除外）
+    if should_skip_today():
         print("今日は祝日 → スキップ")
         return
 
