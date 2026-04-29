@@ -185,9 +185,19 @@ def calc_volume_trend(df):
     if len(df) < 6:
         return 1.0
 
-    today_vol = float(df["Volume"].iloc[-1] or 0)
+    # 今日の出来高（Series/NaN → float）
+    today_raw = df["Volume"].iloc[-1]
+    try:
+        today_vol = float(today_raw)
+    except:
+        today_vol = 0.0
 
-    avg5 = float(df["Volume"].iloc[-6:-1].mean() or 0)
+    # 過去5日平均（Series/NaN → float）
+    avg_raw = df["Volume"].iloc[-6:-1].mean()
+    try:
+        avg5 = float(avg_raw)
+    except:
+        avg5 = 0.0
 
     if avg5 == 0:
         return 1.0
