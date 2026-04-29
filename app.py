@@ -137,9 +137,12 @@ def copilot_future_score(name, news_text, trend_info):
 【ニュース】{news_text}
 【価格トレンド】{trend_info}
 
-出力形式：
-score: 数値
-reason: 簡潔な理由
+必ず次の形式で出力してください：
+
+score: <数値のみ>
+reason: <理由>
+
+上記以外の文章は一切書かないこと。
 """
 
     url = "https://api.githubcopilot.com/v1/chat/completions"
@@ -156,30 +159,19 @@ reason: 簡潔な理由
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         data = r.json()
 
-        # choices がなければ即 0
-        if "choices" not in data or not data["choices"]:
-            return 0
-
         choice = data["choices"][0]
 
-        # Copilot / GPT 系のいろいろな形式に対応
-        text = ""
-
-        if isinstance(choice, dict):
-            if "message" in choice and isinstance(choice["message"], dict):
-                # OpenAI Chat 互換形式
-                text = choice["message"].get("content", "")
-            elif "messages" in choice and isinstance(choice["messages"], list) and choice["messages"]:
-                # Copilot 独自の messages 配列形式
-                msg0 = choice["messages"][0]
-                if isinstance(msg0, dict):
-                    text = msg0.get("content", "")
-            elif "delta" in choice and isinstance(choice["delta"], dict):
-                # ストリーミング風 delta 形式
-                text = choice["delta"].get("content", "")
-
-        if not text:
+        if "message" in choice:
+            text = choice["message"]["content"]
+        elif "messages" in choice:
+            text = choice["messages"][0]["content"]
+        elif "delta" in choice:
+            text = choice["delta"].get("content", "")
+        else:
             return 0
+
+        # ★ Copilot の返答をログに出す（最重要）
+        print("COPILOT_RAW_RESPONSE:", text)
 
         import re
         m = re.search(r"score:\s*([-+]?\d+)", text)
@@ -188,6 +180,7 @@ reason: 簡潔な理由
 
     except Exception:
         return 0
+
 
 
 
