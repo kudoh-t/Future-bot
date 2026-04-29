@@ -73,7 +73,7 @@ LOOKBACK = 60
 
 
 # ============================
-# Google RSS ニュース取得
+# Google RSS ニュース取得（今日＋昨日）
 # ============================
 def fetch_google_news_headlines(name):
     url = f"https://news.google.com/rss/search?q={name}"
@@ -87,7 +87,8 @@ def fetch_google_news_headlines(name):
             pub = entry.published_parsed
             pub_date = datetime.date(pub.tm_year, pub.tm_mon, pub.tm_mday)
 
-            if pub_date == today:
+            # 今日＋昨日のニュースを取得
+            if pub_date >= today - datetime.timedelta(days=1):
                 headlines.append(entry.title)
 
     return headlines
@@ -160,16 +161,6 @@ def fetch_price(ticker: str):
     if df.empty:
         return None
     return df.tail(LOOKBACK)
-
-
-# ============================
-# 価格予測（回帰 → 簡易方向性）
-# ============================
-def predict_direction(close: pd.Series):
-    # 5日変化
-    if len(close) < 6:
-        return 0
-    return (close.iloc[-1] / close.iloc[-6] - 1) * 100
 
 
 # ============================
@@ -257,7 +248,7 @@ def send_line(text: str):
 
 
 # ============================
-# Buy／中立／注意 分類
+# Buy／中立／注意 分類（修正版）
 # ============================
 def classify(gap, news_score, ai_score):
 
@@ -271,7 +262,6 @@ def classify(gap, news_score, ai_score):
 
     # 注意：弱い or リスク
     return "注意"
-
 
 
 # ============================
@@ -296,15 +286,16 @@ def main():
         close = df["Close"]
         current = float(close.iloc[-1])
 
-        # 5日変化
+        # 5営業日前の価格
         if len(close) >= 6:
             price_5d_ago = float(close.iloc[-6])
         else:
             price_5d_ago = current
 
+        # 5営業日前乖離率
         gap = (current / price_5d_ago - 1) * 100
 
-        # Google RSS ニュース
+        # Google RSS ニュース（今日＋昨日）
         headlines = fetch_google_news_headlines(name)
         news_score = score_news_headlines(headlines)
 
@@ -360,8 +351,8 @@ def main():
         msg += (
             f"■ {name}（{category}）\n"
             f"現在値：{current:.2f} 円\n"
-            f"乖離：{gap:+.2f}%\n"
-            f"材料：{headlines[0] if headlines else '（本日ニュースなし）'}\n"
+            f"5営業日前乖離率：{gap:+.2f}%\n"
+            f"材料：{headlines[0] if headlines else '（本日・昨日ニュースなし）'}\n"
             f"AI判定：{ai_score}（理由：{reason}）\n"
             f"総合スコア：{total:+.2f}\n\n"
         )
