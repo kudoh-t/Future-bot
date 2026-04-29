@@ -2,7 +2,7 @@ name: run-app
 
 on:
   schedule:
-    - cron: "0 22 * * *"   # JST 7:00（UTC 22:00）
+    - cron: "40 2 * * *"   # JST 11:40（UTC 02:40）
   workflow_dispatch:
 
 jobs:
@@ -21,15 +21,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install yfinance requests numpy pandas
-          pip install jpholiday
+          pip install -r requirements.txt
 
       - name: Run app.py
         env:
           CHANNEL_ACCESS_TOKEN: ${{ secrets.CHANNEL_ACCESS_TOKEN }}
           USER_ID: ${{ secrets.USER_ID }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # ← これが必要
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           python app.py
-
-
