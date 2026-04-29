@@ -184,11 +184,16 @@ def score_news_headlines(headlines):
 def calc_volume_trend(df):
     if len(df) < 6:
         return 1.0
-    today_vol = df["Volume"].iloc[-1]
-    avg5 = df["Volume"].iloc[-6:-1].mean()
+
+    today_vol = float(df["Volume"].iloc[-1] or 0)
+
+    avg5 = float(df["Volume"].iloc[-6:-1].mean() or 0)
+
     if avg5 == 0:
         return 1.0
+
     return today_vol / avg5
+
 
 
 # ============================
