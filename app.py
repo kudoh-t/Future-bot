@@ -158,7 +158,7 @@ reason: <理由>
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=20)
         data = r.json()
-        print("COPILOT_API_RAW:", data)
+        print("COPILOT_API_RAW:", data, flush=True)
 
         choice = data["choices"][0]
 
@@ -182,7 +182,7 @@ reason: <理由>
     except Exception as e:
         print("COPILOT_ERROR:", e)
         try:
-            print("COPILOT_API_RAW:", data)
+            print("COPILOT_API_RAW:", data, flush=True)
         except:
             print("COPILOT_API_RAW: <no data>")
         return 0
