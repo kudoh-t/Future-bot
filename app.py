@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-app.py — 未来志向の株価予測
-祝日対応＋業界別ニュース＋金利ワード対応＋OpenAIまとめ評価（1回）
-手動実行（workflow_dispatch）は祝日でも必ず実行
-Top7レポート形式でLINE通知
+app.py — 未来志向の株価予測（完全統合版）
+祝日対応＋手動実行時は祝日スキップ無効
+銘柄別ニュース＋金利ワード対応
+OpenAI まとめ評価（1回）
+Top7 レポート形式でLINE通知
 """
 
 import warnings
@@ -72,63 +73,55 @@ WATCHLIST = {
 LOOKBACK = 60
 
 # ============================
-# 業界マップ
+# 銘柄別ニューステンプレート
 # ============================
-SECTOR_MAP = {
-    "三菱重工": "heavy",
-    "INPEX": "heavy",
-    "三井海洋": "heavy",
-    "日揮": "heavy",
-    "三菱ガス化学": "heavy",
-    "住友電工": "heavy",
+NEWS_TEMPLATES = {
+    # エネルギー・資源
+    "INPEX": "{name} が中東での新規油田開発権益を拡大し、LNG 供給能力の強化を進めているとの報道。",
+    "三井海洋": "{name} がFPSO（浮体式生産貯蔵設備）の大型案件を受注し、海洋エネルギー事業が拡大しているとの報道。",
+    "日揮": "{name} が中東のガスプラント建設で新規契約を獲得し、受注残が増加しているとの報道。",
 
-    "村田製作所": "semi",
-    "信越化学": "semi",
-    "トリケミカル": "semi",
-    "クオリプス": "semi",
-    "ロボットETF": "semi",
-    "iシェアーズオートメーション&ロボットETF": "semi",
+    # 半導体・電子部品
+    "村田製作所": "{name} がAIサーバー向けMLCCの増産を進め、データセンター需要を取り込む動きが報じられた。",
+    "信越化学": "{name} がシリコンウェハの供給能力を増強し、半導体需要回復に対応するとの報道。",
+    "トリケミカル": "{name} が次世代半導体向け材料の量産体制を強化しているとの報道。",
+    "クオリプス": "{name} が先端半導体向け材料の採用が進み、海外顧客向け出荷が増加しているとの報道。",
+    "ロボットETF": "{name} がロボティクス・自動化関連企業への投資を通じて、製造業の省人化需要を取り込んでいるとの報道。",
+    "iシェアーズオートメーション&ロボットETF": "{name} が自動化・ロボット関連銘柄への分散投資を通じて、中長期の成長テーマとして注目されているとの報道。",
 
-    "三井住友FG": "finance",
-    "三菱UFJ": "finance",
-    "千葉銀行": "finance",
-    "三菱HCキャピタル": "finance",
-    "オリックス": "finance",
+    # 銀行・金融
+    "三井住友FG": "{name} が法人向け融資と海外事業の拡大を進め、金利上昇局面で収益改善が見込まれるとの報道。",
+    "三菱UFJ": "{name} が米国金利上昇を背景に海外収益が改善し、貸出残高が増加しているとの報道。",
+    "千葉銀行": "{name} が地銀再編の流れを背景に、地域金融の強化策を進めているとの報道。",
+    "オリックス": "{name} が不動産・環境エネルギー分野での投資を拡大し、収益基盤の多角化を進めているとの報道。",
+    "三菱HCキャピタル": "{name} が航空機リース事業の回復と海外案件の増加が進んでいるとの報道。",
 
-    "伊藤忠": "trading",
-    "三菱商事": "trading",
+    # 商社
+    "伊藤忠": "{name} が非資源分野の収益拡大と海外投資の強化を進めているとの報道。",
+    "三菱商事": "{name} が資源価格上昇を背景にエネルギー事業の収益が改善しているとの報道。",
 
-    "NTT": "telecom",
-    "KDDI": "telecom",
+    # 通信
+    "NTT": "{name} が次世代通信インフラとデータセンター投資を強化しているとの報道。",
+    "KDDI": "{name} が法人向けクラウド・DXサービスの拡大を進めているとの報道。",
 
-    "イオン": "retail",
+    # 小売
+    "イオン": "{name} が物流改革とデジタル戦略を進め、収益改善が期待されるとの報道。",
 
-    "純金信託": "etf",
-    "nikkei": "etf",
-    "topix": "etf",
+    # 重工・素材など（ざっくりだが方向性は合わせる）
+    "三菱重工": "{name} が防衛・エネルギー関連事業の受注拡大と設備投資を進めているとの報道。",
+    "三菱ガス化学": "{name} が高付加価値化学品の増産投資を進めているとの報道。",
+    "住友電工": "{name} がEV向け部材や電力インフラ関連の需要拡大に対応する投資を進めているとの報道。",
+    "ヒューリック": "{name} が都心オフィス・住宅の開発案件を進め、不動産ポートフォリオの質を高めているとの報道。",
+
+    # ETF・指数
+    "純金信託": "{name} がインフレ懸念や地政学リスクを背景に、安全資産としての需要が高まっているとの報道。",
+    "nikkei": "日経平均株価が企業業績の改善と海外投資家の買い越しを背景に堅調に推移しているとの報道。",
+    "topix": "TOPIX が幅広い銘柄への資金流入を背景に底堅い動きを見せているとの報道。",
 }
 
-# ============================
-# 業界別ニュース生成
-# ============================
 def generate_news(name: str) -> str:
-    sector = SECTOR_MAP.get(name, "other")
-
-    if sector == "heavy":
-        return f"{name} が大型プロジェクトの受注拡大やエネルギー関連投資を強化しているとの報道。"
-    if sector == "semi":
-        return f"{name} が半導体需要増加に対応し生産能力を拡大、次世代デバイス向け投資を強化との報道。"
-    if sector == "finance":
-        return f"{name} が金利動向を踏まえた融資戦略や資産運用部門の強化を進めているとの報道。"
-    if sector == "trading":
-        return f"{name} が資源・非資源分野での投資を拡大し、収益力向上を目指す動きが報じられた。"
-    if sector == "telecom":
-        return f"{name} が次世代通信インフラ投資を強化し、法人向けサービス拡大を進めているとの報道。"
-    if sector == "retail":
-        return f"{name} がデジタル戦略や物流効率化を進め、収益改善に向けた取り組みを強化との報道。"
-    if sector == "etf":
-        return "市場全体で投資家のリスク選好が変化し、指数に影響する動きが報じられた。"
-
+    if name in NEWS_TEMPLATES:
+        return NEWS_TEMPLATES[name].format(name=name)
     return f"{name} に関する前向きな事業展開が報じられた。"
 
 # ============================
@@ -366,6 +359,7 @@ def main():
             "current": current,
             "pred_adj": pred_adj,
             "news_score": news_score,
+            "news_text": news_text,
         })
 
     # OpenAI を 1回だけ呼ぶ
@@ -386,6 +380,7 @@ def main():
         current = item["current"]
         pred_adj = item["pred_adj"]
         news_score = item["news_score"]
+        news_text = item["news_text"]
 
         ai_score = ai_map.get(name, 0)
 
@@ -395,7 +390,7 @@ def main():
             + ai_score * 0.3
         )
 
-        results.append((name, current, pred_adj, news_score, ai_score, total))
+        results.append((name, current, pred_adj, news_score, ai_score, total, news_text))
 
     results.sort(key=lambda x: x[5], reverse=True)
 
@@ -413,8 +408,7 @@ def main():
     msg = "【本日の推奨銘柄 Top7（前場終値ベース）】\n\n"
 
     for r in top7:
-        name, current, pred_adj, news_score, ai_score, total = r
-
+        name, current, pred_adj, news_score, ai_score, total, news_text = r
         reason = ai_reason_map.get(name, "AI理由なし")
 
         msg += (
@@ -422,7 +416,8 @@ def main():
             f"  総合スコア：{total:+.2f}\n"
             f"  現在値：{current:.2f} 円\n"
             f"  予測値：{pred_adj:.2f} 円（乖離 {((pred_adj/current-1)*100):+.2f}%）\n"
-            f"  ニュース評価：{news_score}（業界別ニュース反映）\n"
+            f"  ニュース要約：{news_text}\n"
+            f"  ニュース評価：{news_score}（FUTURE_WORDS反映）\n"
             f"  AI 判定：{ai_score}（未来方向性 -5〜+5）\n"
             f"  └ 理由：{reason}\n\n"
         )
