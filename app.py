@@ -260,11 +260,18 @@ def send_line(text: str):
 # Buy／中立／注意 分類
 # ============================
 def classify(gap, news_score, ai_score):
-    if gap > 3 and news_score >= 2 and ai_score >= 1:
+
+    # Buy：強い銘柄（ニュース弱くてもOK）
+    if gap > 3 and ai_score >= 1 and news_score >= -1:
         return "Buy"
-    if 0 <= gap <= 3 and -1 <= news_score <= 1 and 0 <= ai_score <= 1:
+
+    # 中立：普通
+    if 0 <= gap <= 3 and -1 <= ai_score <= 1:
         return "中立"
+
+    # 注意：弱い or リスク
     return "注意"
+
 
 
 # ============================
