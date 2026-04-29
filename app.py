@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-app.py — 未来志向の株価予測（強化版・完全修正版）
+app.py — 未来志向の株価予測（完全修正版）
 """
 
 import os
@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-from datetime import datetime, timedelta
 
 # ============================
 # 監視銘柄
@@ -84,7 +83,7 @@ def predict_price(close):
         pred_exp = math.exp(a3 * (N + 1) + b3)
 
         preds = [pred_linear, pred_log, pred_exp]
-        preds = [p for p in preds if p > 0 and not math.isnan(p)]
+        preds = [float(p) for p in preds if p > 0 and not math.isnan(p)]
 
         if len(preds) == 0:
             return None
@@ -173,7 +172,6 @@ def send_line(text):
     url = "https://api.line.me/v2/bot/message/push"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # 長文を安全に分割
     chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
     messages = [{"type": "text", "text": chunk} for chunk in chunks]
 
@@ -194,13 +192,13 @@ def main():
             continue
 
         close = df["Close"]
-        current = close.iloc[-1]
+        current = float(close.iloc[-1])
 
         pred = predict_price(close)
         if pred is None:
             continue
 
-        # ★ Series → float 強制
+        # pred を float に強制
         if isinstance(pred, pd.Series):
             pred = pred.iloc[0]
         pred = float(pred)
@@ -209,10 +207,10 @@ def main():
         if pred_adj is None:
             continue
 
-# ★ Series → float 強制
-if isinstance(pred_adj, pd.Series):
-    pred_adj = pred_adj.iloc[0]
-pred_adj = float(pred_adj)
+        # pred_adj を float に強制
+        if isinstance(pred_adj, pd.Series):
+            pred_adj = pred_adj.iloc[0]
+        pred_adj = float(pred_adj)
 
         trend_info = f"現在 {current:.2f} → 予測 {pred_adj:.2f}"
 
@@ -232,13 +230,11 @@ pred_adj = float(pred_adj)
     # 並べ替え
     results.sort(key=lambda x: x[5], reverse=True)
 
-    # ★ デバッグ
+    # デバッグ
     print("DEBUG_RESULTS_COUNT:", len(results))
 
-    # ★ 結果ゼロなら通知して終了
     if len(results) == 0:
-        msg = "【未来志向スコアランキング】\nデータ取得に失敗しました。"
-        send_line(msg)
+        send_line("【未来志向スコアランキング】\nデータ取得に失敗しました。")
         return
 
     # 通知本文生成
