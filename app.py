@@ -30,13 +30,25 @@ def is_manual_run():
 
 
 # ============================
-# 祝日スキップ判定
+# 土日・祝日スキップ判定（手動実行は除外）
 # ============================
 def should_skip_today():
+    # 手動実行ならスキップ無効化
     if is_manual_run():
-        print("手動実行のため祝日スキップを無効化します")
+        print("手動実行のため土日・祝日スキップを無効化します")
         return False
-    return jpholiday.is_holiday(datetime.date.today())
+
+    today = datetime.date.today()
+
+    # 土日スキップ
+    if today.weekday() >= 5:  # 5=土曜, 6=日曜
+        return True
+
+    # 祝日スキップ
+    if jpholiday.is_holiday(today):
+        return True
+
+    return False
 
 
 # ============================
@@ -113,7 +125,7 @@ SECTOR_MAP = {
 
 
 # ============================
-# Google RSS ニュース取得（今日＋昨日）
+# Google RSS ニュース取得
 # ============================
 def fetch_google_news_headlines(name):
     url = f"https://news.google.com/rss/search?q={name}"
@@ -176,7 +188,7 @@ def score_news_headlines(headlines):
 
 
 # ============================
-# 出来高トレンド（安全版）
+# 出来高トレンド
 # ============================
 def calc_volume_trend(df):
     if len(df) < 6:
@@ -330,8 +342,9 @@ def classify(gap, news_score, ai_score):
 # ============================
 def main():
 
+    # ★ 土日・祝日スキップ（手動実行は除外）
     if should_skip_today():
-        print("今日は祝日 → スキップ")
+        print("今日は土日または祝日 → スキップ")
         return
 
     temp_results = []
@@ -459,26 +472,4 @@ def main():
             f"総合スコア：{total:+.2f}\n\n"
         )
 
-    # -------------------------
-    # ETF セクション
-    # -------------------------
-    msg += "【本日のETF 注目銘柄】\n\n"
-
-    etf_results.sort(key=lambda x: x["score"], reverse=True)
-
-    for e in etf_results:
-        msg += (
-            f"■ {e['name']}（{e['code']}）\n"
-            f"5営業日前乖離率：{e['gap']:+.2f}%\n"
-            f"AI判定：{e['ai']}\n"
-            f"ETFスコア：{e['score']:+.2f}\n\n"
-        )
-    # ★★★ 日付をメッセージ先頭に追加 ★★★
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    msg = f"📅 {today}\n\n" + msg
-    
-    send_line(msg)
-
-
-if __name__ == "__main__":
-    main()
+    # ----------------
