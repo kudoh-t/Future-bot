@@ -472,4 +472,27 @@ def main():
             f"総合スコア：{total:+.2f}\n\n"
         )
 
-    # ----------------
+    # -------------------------
+    # ETF セクション
+    # -------------------------
+    msg += "【本日のETF 注目銘柄】\n\n"
+
+    etf_results.sort(key=lambda x: x["score"], reverse=True)
+
+    for e in etf_results:
+        msg += (
+            f"■ {e['name']}（{e['code']}）\n"
+            f"5営業日前乖離率：{e['gap']:+.2f}%\n"
+            f"AI判定：{e['ai']}\n"
+            f"ETFスコア：{e['score']:+.2f}\n\n"
+        )
+
+    # ★★★ 日付をメッセージ先頭に追加 ★★★
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    msg = f"📅 {today}\n\n" + msg
+
+    send_line(msg)
+
+
+if __name__ == "__main__":
+    main()
