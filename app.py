@@ -473,7 +473,10 @@ def main():
             f"AI判定：{e['ai']}\n"
             f"ETFスコア：{e['score']:+.2f}\n\n"
         )
-
+    # ★★★ 日付をメッセージ先頭に追加 ★★★
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    msg = f"📅 {today}\n\n" + msg
+    
     send_line(msg)
 
 
