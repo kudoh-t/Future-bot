@@ -527,37 +527,37 @@ def main():
         )
 
     # ============================
-# 反転シグナル（順位付け）
-# ============================
-reversal_list = []
+    # 反転シグナル（順位付け）
+    # ============================
+    reversal_list = []
 
-targets = [
-    ("フジクラ", "5803.T"),
-    ("村田製作所", "6981.T"),
-    ("住友電工", "5802.T"),
-    ("浜松ホトニクス", "6965.T"),
-]
+    targets = [
+        ("フジクラ", "5803.T"),
+        ("村田製作所", "6981.T"),
+        ("住友電工", "5802.T"),
+        ("浜松ホトニクス", "6965.T"),
+    ]
 
-for label, ticker in targets:
-    df = fetch_price(ticker)
-    if df is not None:
-        df = add_basic_indicators(df)
-        msg_rev, strength = check_reversal(df, label)
-        reversal_list.append((label, msg_rev, strength))
-    else:
-        reversal_list.append((label, f"【{label}】データ取得エラー", -999))
+    for label, ticker in targets:
+        df = fetch_price(ticker)
+        if df is not None:
+            df = add_basic_indicators(df)
+            msg_rev, strength = check_reversal(df, label)
+            reversal_list.append((label, msg_rev, strength))
+        else:
+            reversal_list.append((label, f"【{label}】データ取得エラー", -999))
 
-# 強い順に並べる
-reversal_list.sort(key=lambda x: x[2], reverse=True)
+    # 強い順に並べる
+    reversal_list.sort(key=lambda x: x[2], reverse=True)
 
-msg += "【反転シグナル（強い順）】\n\n"
+    msg += "【反転シグナル（強い順）】\n\n"
 
-for _, m, _ in reversal_list:
-    msg += m + "\n\n"
+    for _, m, _ in reversal_list:
+        msg += m + "\n\n"
 
-# 結論
-top_label, _, top_strength = reversal_list[0]
-msg += f"【本日の結論】\n→ 最も反転の強さが見られたのは **{top_label}** です。\n"
+    # 結論
+    top_label, _, _ = reversal_list[0]
+    msg += f"【本日の結論】\n→ 最も反転の強さが見られたのは **{top_label}** です。\n"
 
 
 send_line(msg)
