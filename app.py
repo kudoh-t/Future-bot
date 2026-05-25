@@ -320,42 +320,39 @@ def add_basic_indicators(df):
 
     return df
 
-
-
 def check_reversal(df, label):
     last = df.iloc[-1]
     prev = df.iloc[-2]
     signals = []
 
     # 共通ロジック
-    if prev["Close"] < prev["MA25"] and last["Close"] > last["MA25"]:
+    if float(prev["Close"]) < float(prev["MA25"]) and float(last["Close"]) > float(last["MA25"]):
         signals.append("25日線上抜け")
 
-    if prev["RSI"] < 40 < last["RSI"]:
+    if float(prev["RSI"]) < 40 < float(last["RSI"]):
         signals.append("RSI反転")
 
-    if last["Volume"] > 1.5 * last["VOL5"]:
+    if float(last["Volume"]) > 1.5 * float(last["VOL5"]):
         signals.append("出来高急増")
 
-    if prev["MACD"] < prev["MACD_SIGNAL"] and last["MACD"] > last["MACD_SIGNAL"]:
+    if float(prev["MACD"]) < float(prev["MACD_SIGNAL"]) and float(last["MACD"]) > float(last["MACD_SIGNAL"]):
         signals.append("MACDゴールデンクロス")
 
     # 浜松ホトニクスだけ追加ロジック
     if label == "浜松ホトニクス":
-        if 1650 <= last["Close"] <= 1700:
+        if 1650 <= float(last["Close"]) <= 1700:
             signals.append("押し目価格帯（1650〜1700）")
-        if last["RSI"] < 40:
+        if float(last["RSI"]) < 40:
             signals.append("RSI売られすぎ")
-        if last["Volume"] < last["VOL5"] * 0.8:
+        if float(last["Volume"]) < float(last["VOL5"]) * 0.8:
             signals.append("出来高減少（売り枯れ）")
-        if last["Low"] < prev["Low"] and last["Close"] > last["Open"]:
+        if float(last["Low"]) < float(prev["Low"]) and float(last["Close"]) > float(last["Open"]):
             signals.append("下ヒゲ陽線（反転初期）")
 
     if signals:
         return f"【{label} 反転シグナル】\n- " + "\n- ".join(signals)
     else:
         return f"【{label}】反転シグナルなし"
-
 
 # ============================
 # メイン処理（TOP3＋ETF＋反転を1本化）
