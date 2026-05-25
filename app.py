@@ -331,8 +331,11 @@ def check_reversal(df, label):
     price_pct = (price / price_prev - 1) * 100 if price_prev > 0 else 0
 
     vol_today = float(last["Volume"])
-    vol_avg5 = float(last["VOL5"]) if last["VOL5"] > 0 else 1
+    vol_avg5 = float(last["VOL5"])
+    if vol_avg5 <= 0:
+        vol_avg5 = 1
     vol_ratio = vol_today / vol_avg5
+
 
     rsi_prev = float(prev["RSI"])
     rsi_last = float(last["RSI"])
