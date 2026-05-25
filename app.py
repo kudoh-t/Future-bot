@@ -324,26 +324,23 @@ def check_reversal(df, label):
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # === 生データ抽出 ===
+    # === 生データ ===
     price = float(last["Close"])
     price_prev = float(prev["Close"])
     price_diff = price - price_prev
     price_pct = (price / price_prev - 1) * 100 if price_prev > 0 else 0
 
     vol_today = float(last["Volume"])
-    vol_avg5 = float(last["VOL5"])
-    if vol_avg5 <= 0:
-        vol_avg5 = 1
+    vol_avg5 = float(last["VOL5"]) if float(last["VOL5"]) > 0 else 1
     vol_ratio = vol_today / vol_avg5
-
 
     rsi_prev = float(prev["RSI"])
     rsi_last = float(last["RSI"])
+    rsi_diff = rsi_last - rsi_prev
 
     macd_prev = float(prev["MACD"])
     macd_last = float(last["MACD"])
-    macd_sig_prev = float(prev["MACD_SIGNAL"])
-    macd_sig_last = float(last["MACD_SIGNAL"])
+    macd_diff = macd_last - macd_prev
 
     timestamp = last.name.strftime("%Y-%m-%d %H:%M")
 
@@ -359,10 +356,13 @@ def check_reversal(df, label):
     if vol_ratio > 1.5:
         signals.append(f"出来高急増（{vol_ratio:.2f}倍）")
 
-    if macd_prev < macd_sig_prev and macd_last > macd_sig_last:
+    if macd_prev < macd_last:
+        signals.append("MACD上昇")
+
+    if macd_prev < float(prev["MACD_SIGNAL"]) and macd_last > float(last["MACD_SIGNAL"]):
         signals.append("MACDゴールデンクロス")
 
-    # 浜松ホトニクスだけ追加
+    # === 浜松ホトニクスだけ追加 ===
     if label == "浜松ホトニクス":
         if 1650 <= price <= 1700:
             signals.append("押し目価格帯（1650〜1700）")
@@ -373,7 +373,10 @@ def check_reversal(df, label):
         if float(last["Low"]) < float(prev["Low"]) and price > float(last["Open"]):
             signals.append("下ヒゲ陽線（反転初期）")
 
-    # === 出力フォーマット ===
+    # === 反転強度（生データベース） ===
+    strength = vol_ratio + (rsi_diff / 10) + (macd_diff / 100)
+
+    # === 出力メッセージ ===
     msg = f"【{label} 反転シグナル】\n"
     msg += f"- 時刻：{timestamp}\n"
     msg += f"- 株価：{price:.0f} 円（前日比 {price_pct:+.2f}% / {price_diff:+.0f} 円）\n"
@@ -388,7 +391,8 @@ def check_reversal(df, label):
     else:
         msg += "- 材料：なし\n"
 
-    return msg
+    return msg, strength
+
 
 
 # ============================
@@ -523,30 +527,40 @@ def main():
         )
 
     # ============================
-    # 反転シグナル（4銘柄）
-    # ============================
-    msg += "【反転シグナル（4銘柄）】\n\n"
+# 反転シグナル（順位付け）
+# ============================
+reversal_list = []
 
-    targets = [
-        ("フジクラ", "5803.T"),
-        ("村田製作所", "6981.T"),
-        ("住友電工", "5802.T"),
-        ("浜松ホトニクス", "6965.T"),
-    ]
+targets = [
+    ("フジクラ", "5803.T"),
+    ("村田製作所", "6981.T"),
+    ("住友電工", "5802.T"),
+    ("浜松ホトニクス", "6965.T"),
+]
 
-    for label, ticker in targets:
-        df = fetch_price(ticker)
-        if df is not None:
-            df = add_basic_indicators(df)
-            msg += check_reversal(df, label) + "\n\n"
-        else:
-            msg += f"【{label}】データ取得エラー\n\n"
+for label, ticker in targets:
+    df = fetch_price(ticker)
+    if df is not None:
+        df = add_basic_indicators(df)
+        msg_rev, strength = check_reversal(df, label)
+        reversal_list.append((label, msg_rev, strength))
+    else:
+        reversal_list.append((label, f"【{label}】データ取得エラー", -999))
 
-    # 日付
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    msg = f"📅 {today}\n\n" + msg
+# 強い順に並べる
+reversal_list.sort(key=lambda x: x[2], reverse=True)
 
-    send_line(msg)
+msg += "【反転シグナル（強い順）】\n\n"
+
+for _, m, _ in reversal_list:
+    msg += m + "\n\n"
+
+# 結論
+top_label, _, top_strength = reversal_list[0]
+msg += f"【本日の結論】\n→ 最も反転の強さが見られたのは **{top_label}** です。\n"
+
+
+send_line(msg)
 
 
 if __name__ == "__main__":
