@@ -555,13 +555,13 @@ def main():
     for _, m, _ in reversal_list:
         msg += m + "\n\n"
 
-    # 結論
+        # 結論
     top_label, _, _ = reversal_list[0]
     msg += f"【本日の結論】\n→ 最も反転の強さが見られたのは **{top_label}** です。\n"
 
-
-send_line(msg)
+    send_line(msg)
 
 
 if __name__ == "__main__":
     main()
+
