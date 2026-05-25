@@ -471,6 +471,93 @@ def main():
             f"AI判定：{ai_score}（理由：{reason}）\n"
             f"総合スコア：{total:+.2f}\n\n"
         )
+# ============================
+# 反転ロジック（フジクラ・村田・浜ホト）
+# ============================
+
+def add_basic_indicators(df):
+    df = df.copy()
+    close = df["Close"].squeeze()
+
+    df["MA25"] = close.rolling(25).mean()
+    df["VOL5"] = df["Volume"].rolling(5).mean()
+
+    # RSI
+    import ta
+    df["RSI"] = ta.momentum.RSIIndicator(close, 14).rsi()
+
+    # MACD
+    macd = ta.trend.MACD(close)
+    df["MACD"] = macd.macd()
+    df["MACD_SIGNAL"] = macd.macd_signal()
+
+    return df
+
+
+def check_fujikura_reversal(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    signals = []
+
+    if prev["Close"] < prev["MA25"] and last["Close"] > last["MA25"]:
+        signals.append("25日線上抜け")
+
+    if prev["RSI"] < 40 < last["RSI"]:
+        signals.append("RSI反転")
+
+    if last["Volume"] > 1.5 * last["VOL5"]:
+        signals.append("出来高急増")
+
+    if prev["MACD"] < prev["MACD_SIGNAL"] and last["MACD"] > last["MACD_SIGNAL"]:
+        signals.append("MACDゴールデンクロス")
+
+    if signals:
+        return "【フジクラ 反転シグナル】\n- " + "\n- ".join(signals)
+    return None
+
+
+def check_murata_reversal(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    signals = []
+
+    if prev["Close"] < prev["MA25"] and last["Close"] > last["MA25"]:
+        signals.append("25日線上抜け")
+
+    if prev["RSI"] < 40 < last["RSI"]:
+        signals.append("RSI反転")
+
+    if last["Volume"] > 1.5 * last["VOL5"]:
+        signals.append("出来高急増")
+
+    if prev["MACD"] < prev["MACD_SIGNAL"] and last["MACD"] > last["MACD_SIGNAL"]:
+        signals.append("MACDゴールデンクロス")
+
+    if signals:
+        return "【村田製作所 反転】\n- " + "\n- ".join(signals)
+    return None
+
+
+def check_hamahoto_reversal(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    signals = []
+
+    if 1650 <= last["Close"] <= 1700:
+        signals.append("押し目価格帯（1650〜1700）")
+
+    if last["RSI"] < 40:
+        signals.append("RSI売られすぎ")
+
+    if last["Volume"] < last["VOL5"] * 0.8:
+        signals.append("出来高減少（売り枯れ）")
+
+    if last["Low"] < prev["Low"] and last["Close"] > last["Open"]:
+        signals.append("下ヒゲ陽線（反転初期）")
+
+    if signals:
+        return "【浜松ホトニクス 押し目】\n- " + "\n- ".join(signals)
+    return None
 
     # -------------------------
     # ETF セクション
