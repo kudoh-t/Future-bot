@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-app.py — 個別株 TOP3 ＋ ETF 別枠
-Google RSS × 材料性スコア × セクター地合い × 出来高トレンド × Buy/中立/注意
-ETF は gap＋AI のみで評価
+app.py — TOP3 ＋ ETF ＋ 反転シグナル（4銘柄）
+LINE 通知は 1 本に統合
 """
 
 import warnings
@@ -10,16 +9,13 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 import os
-import math
 import json
 import datetime
 import feedparser
-
-import numpy as np
-import pandas as pd
 import requests
 import yfinance as yf
 import jpholiday
+import pandas as pd
 
 
 # ============================
@@ -30,21 +26,18 @@ def is_manual_run():
 
 
 # ============================
-# 土日・祝日スキップ判定（手動実行は除外）
+# 土日・祝日スキップ判定
 # ============================
 def should_skip_today():
-    # 手動実行ならスキップ無効化
     if is_manual_run():
-        print("手動実行のため土日・祝日スキップを無効化します")
+        print("手動実行 → スキップ無効化")
         return False
 
     today = datetime.date.today()
 
-    # 土日スキップ
-    if today.weekday() >= 5:  # 5=土曜, 6=日曜
+    if today.weekday() >= 5:
         return True
 
-    # 祝日スキップ
     if jpholiday.is_holiday(today):
         return True
 
@@ -75,7 +68,7 @@ WATCHLIST = {
     "イオン": "8267",
     "三菱ガス化学": "4182",
 
-    # ETF（別枠）
+    # ETF
     "純金信託": "1540",
     "ロボットETF": "2638",
     "iシェアーズオートメーション&ロボットETF": "2522",
@@ -86,7 +79,6 @@ WATCHLIST = {
 }
 
 ETF_LIST = ["1540", "2638", "2522"]
-
 LOOKBACK = 60
 
 
@@ -117,7 +109,6 @@ SECTOR_MAP = {
     "クオリプス": "医薬品",
     "トリケミカル": "化学",
 
-    # ETF はセクターなし
     "純金信託": "ETF",
     "ロボットETF": "ETF",
     "iシェアーズオートメーション&ロボットETF": "ETF",
@@ -125,7 +116,7 @@ SECTOR_MAP = {
 
 
 # ============================
-# Google RSS ニュース取得
+# Google RSS ニュース
 # ============================
 def fetch_google_news_headlines(name):
     url = f"https://news.google.com/rss/search?q={name}"
@@ -138,7 +129,6 @@ def fetch_google_news_headlines(name):
         if hasattr(entry, "published_parsed"):
             pub = entry.published_parsed
             pub_date = datetime.date(pub.tm_year, pub.tm_mon, pub.tm_mday)
-
             if pub_date >= today - datetime.timedelta(days=1):
                 headlines.append(entry.title)
 
@@ -194,15 +184,8 @@ def calc_volume_trend(df):
     if len(df) < 6:
         return 1.0
 
-    try:
-        today_vol = float(df["Volume"].iloc[-1])
-    except:
-        today_vol = 0.0
-
-    try:
-        avg5 = float(df["Volume"].iloc[-6:-1].mean())
-    except:
-        avg5 = 0.0
+    today_vol = float(df["Volume"].iloc[-1])
+    avg5 = float(df["Volume"].iloc[-6:-1].mean())
 
     if avg5 == 0:
         return 1.0
@@ -214,13 +197,8 @@ def calc_volume_trend(df):
 # セクター地合い
 # ============================
 def calc_sector_trend(sector, temp_results):
-    values = []
-    for item in temp_results:
-        if SECTOR_MAP.get(item["name"]) == sector:
-            values.append(item["gap"])
-    if not values:
-        return 0
-    return sum(values) / len(values)
+    values = [item["gap"] for item in temp_results if SECTOR_MAP.get(item["name"]) == sector]
+    return sum(values) / len(values) if values else 0
 
 
 # ============================
@@ -240,12 +218,12 @@ def fetch_price(ticker: str):
 
 
 # ============================
-# OpenAI まとめ評価
+# OpenAI AI判定
 # ============================
 def copilot_future_score_batch(items):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        print("OPENAI_ERROR: OPENAI_API_KEY is not set", flush=True)
+        print("OPENAI_ERROR: OPENAI_API_KEY is not set")
         return []
 
     prompt = f"""
@@ -262,18 +240,12 @@ def copilot_future_score_batch(items):
     "name": "銘柄名",
     "score": 数値,
     "reason": "理由"
-  }},
-  ...
+  }}
 ]
-
-上記以外の文章は一切書かないこと。
 """
 
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "model": "gpt-4o-mini-2024-07-18",
         "messages": [{"role": "user", "content": prompt}],
@@ -283,19 +255,16 @@ def copilot_future_score_batch(items):
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=60)
         data = r.json()
-        print("OPENAI_API_RAW:", data, flush=True)
 
         if "error" in data:
-            print("OPENAI_ERROR_MSG:", data["error"], flush=True)
+            print("OPENAI_ERROR:", data["error"])
             return []
 
         text = data["choices"][0]["message"]["content"]
-        print("OPENAI_RAW_RESPONSE:", text, flush=True)
-
         return json.loads(text)
 
     except Exception as e:
-        print("OPENAI_ERROR:", e, flush=True)
+        print("OPENAI_ERROR:", e)
         return []
 
 
@@ -317,44 +286,78 @@ def send_line(text: str):
     messages = [{"type": "text", "text": chunk} for chunk in chunks]
 
     payload = {"to": user_id, "messages": messages}
-    try:
-        requests.post(url, headers=headers, json=payload, timeout=10)
-    except Exception as e:
-        print("LINE_ERROR:", e, flush=True)
+    requests.post(url, headers=headers, json=payload, timeout=10)
+# ============================
+# 反転ロジック
+# ============================
+def add_basic_indicators(df):
+    df = df.copy()
+    close = df["Close"]
+
+    df["MA25"] = close.rolling(25).mean()
+    df["VOL5"] = df["Volume"].rolling(5).mean()
+
+    import ta
+    df["RSI"] = ta.momentum.RSIIndicator(close, 14).rsi()
+
+    macd = ta.trend.MACD(close)
+    df["MACD"] = macd.macd()
+    df["MACD_SIGNAL"] = macd.macd_signal()
+
+    return df
+
+
+def check_reversal(df, label):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    signals = []
+
+    # 共通ロジック
+    if prev["Close"] < prev["MA25"] and last["Close"] > last["MA25"]:
+        signals.append("25日線上抜け")
+
+    if prev["RSI"] < 40 < last["RSI"]:
+        signals.append("RSI反転")
+
+    if last["Volume"] > 1.5 * last["VOL5"]:
+        signals.append("出来高急増")
+
+    if prev["MACD"] < prev["MACD_SIGNAL"] and last["MACD"] > last["MACD_SIGNAL"]:
+        signals.append("MACDゴールデンクロス")
+
+    # 浜松ホトニクスだけ追加ロジック
+    if label == "浜松ホトニクス":
+        if 1650 <= last["Close"] <= 1700:
+            signals.append("押し目価格帯（1650〜1700）")
+        if last["RSI"] < 40:
+            signals.append("RSI売られすぎ")
+        if last["Volume"] < last["VOL5"] * 0.8:
+            signals.append("出来高減少（売り枯れ）")
+        if last["Low"] < prev["Low"] and last["Close"] > last["Open"]:
+            signals.append("下ヒゲ陽線（反転初期）")
+
+    if signals:
+        return f"【{label} 反転シグナル】\n- " + "\n- ".join(signals)
+    else:
+        return f"【{label}】反転シグナルなし"
 
 
 # ============================
-# Buy／中立／注意 分類
-# ============================
-def classify(gap, news_score, ai_score):
-
-    if gap > 3 and ai_score >= 1 and news_score >= -1:
-        return "Buy"
-
-    if 0 <= gap <= 3 and -1 <= ai_score <= 1:
-        return "中立"
-
-    return "注意"
-
-
-# ============================
-# メイン処理
+# メイン処理（TOP3＋ETF＋反転を1本化）
 # ============================
 def main():
 
-    # ★ 土日・祝日スキップ（手動実行は除外）
     if should_skip_today():
-        print("今日は土日または祝日 → スキップ")
+        print("今日はスキップ")
         return
 
+    # ============================
+    # TOP3 ロジック
+    # ============================
     temp_results = []
     items_for_ai = []
 
-    # -------------------------
-    # データ収集
-    # -------------------------
     for name, code in WATCHLIST.items():
-
         ticker = f"{code}.T"
         df = fetch_price(ticker)
         if df is None:
@@ -362,16 +365,10 @@ def main():
 
         close = df["Close"]
         current = float(close.iloc[-1])
-
-        if len(close) >= 6:
-            price_5d_ago = float(close.iloc[-6])
-        else:
-            price_5d_ago = current
-
+        price_5d_ago = float(close.iloc[-6]) if len(close) >= 6 else current
         gap = (current / price_5d_ago - 1) * 100
 
         volume_trend = calc_volume_trend(df)
-
         sector = SECTOR_MAP.get(name, "その他")
 
         headlines = fetch_google_news_headlines(name)
@@ -395,16 +392,11 @@ def main():
             "sector": sector,
         })
 
-    # -------------------------
-    # AI判定
-    # -------------------------
+    # AI 判定
     ai_results = copilot_future_score_batch(items_for_ai)
     ai_map = {item["name"]: item["score"] for item in ai_results}
     ai_reason_map = {item["name"]: item["reason"] for item in ai_results}
 
-    # -------------------------
-    # 個別株と ETF を分離
-    # -------------------------
     stock_results = []
     etf_results = []
 
@@ -421,7 +413,7 @@ def main():
         ai_score = ai_map.get(name, 0)
         reason = ai_reason_map.get(name, "AI理由なし")
 
-        # ETF は別枠
+        # ETF
         if code in ETF_LIST:
             etf_score = gap * 0.7 + ai_score * 0.3
             etf_results.append({
@@ -450,9 +442,7 @@ def main():
              headlines, category, reason, volume_trend, sector_trend)
         )
 
-    # -------------------------
-    # 個別株 TOP3
-    # -------------------------
+    # TOP3
     stock_results.sort(key=lambda x: x[5], reverse=True)
     top3 = stock_results[:3]
 
@@ -460,7 +450,6 @@ def main():
 
     for r in top3:
         name, current, gap, news_score, ai_score, total, headlines, category, reason, volume_trend, sector_trend = r
-
         msg += (
             f"■ {name}（{category}）\n"
             f"現在値：{current:.2f} 円\n"
@@ -471,99 +460,9 @@ def main():
             f"AI判定：{ai_score}（理由：{reason}）\n"
             f"総合スコア：{total:+.2f}\n\n"
         )
-# ============================
-# 反転ロジック（フジクラ・村田・浜ホト）
-# ============================
 
-def add_basic_indicators(df):
-    df = df.copy()
-    close = df["Close"].squeeze()
-
-    df["MA25"] = close.rolling(25).mean()
-    df["VOL5"] = df["Volume"].rolling(5).mean()
-
-    # RSI
-    import ta
-    df["RSI"] = ta.momentum.RSIIndicator(close, 14).rsi()
-
-    # MACD
-    macd = ta.trend.MACD(close)
-    df["MACD"] = macd.macd()
-    df["MACD_SIGNAL"] = macd.macd_signal()
-
-    return df
-
-
-def check_fujikura_reversal(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-    signals = []
-
-    if prev["Close"] < prev["MA25"] and last["Close"] > last["MA25"]:
-        signals.append("25日線上抜け")
-
-    if prev["RSI"] < 40 < last["RSI"]:
-        signals.append("RSI反転")
-
-    if last["Volume"] > 1.5 * last["VOL5"]:
-        signals.append("出来高急増")
-
-    if prev["MACD"] < prev["MACD_SIGNAL"] and last["MACD"] > last["MACD_SIGNAL"]:
-        signals.append("MACDゴールデンクロス")
-
-    if signals:
-        return "【フジクラ 反転シグナル】\n- " + "\n- ".join(signals)
-    return None
-
-
-def check_murata_reversal(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-    signals = []
-
-    if prev["Close"] < prev["MA25"] and last["Close"] > last["MA25"]:
-        signals.append("25日線上抜け")
-
-    if prev["RSI"] < 40 < last["RSI"]:
-        signals.append("RSI反転")
-
-    if last["Volume"] > 1.5 * last["VOL5"]:
-        signals.append("出来高急増")
-
-    if prev["MACD"] < prev["MACD_SIGNAL"] and last["MACD"] > last["MACD_SIGNAL"]:
-        signals.append("MACDゴールデンクロス")
-
-    if signals:
-        return "【村田製作所 反転】\n- " + "\n- ".join(signals)
-    return None
-
-
-def check_hamahoto_reversal(df):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-    signals = []
-
-    if 1650 <= last["Close"] <= 1700:
-        signals.append("押し目価格帯（1650〜1700）")
-
-    if last["RSI"] < 40:
-        signals.append("RSI売られすぎ")
-
-    if last["Volume"] < last["VOL5"] * 0.8:
-        signals.append("出来高減少（売り枯れ）")
-
-    if last["Low"] < prev["Low"] and last["Close"] > last["Open"]:
-        signals.append("下ヒゲ陽線（反転初期）")
-
-    if signals:
-        return "【浜松ホトニクス 押し目】\n- " + "\n- ".join(signals)
-    return None
-
-    # -------------------------
-    # ETF セクション
-    # -------------------------
+    # ETF
     msg += "【本日のETF 注目銘柄】\n\n"
-
     etf_results.sort(key=lambda x: x["score"], reverse=True)
 
     for e in etf_results:
@@ -574,7 +473,27 @@ def check_hamahoto_reversal(df):
             f"ETFスコア：{e['score']:+.2f}\n\n"
         )
 
-    # ★★★ 日付をメッセージ先頭に追加 ★★★
+    # ============================
+    # 反転シグナル（4銘柄）
+    # ============================
+    msg += "【反転シグナル（4銘柄）】\n\n"
+
+    targets = [
+        ("フジクラ", "5803.T"),
+        ("村田製作所", "6981.T"),
+        ("住友電工", "5802.T"),
+        ("浜松ホトニクス", "6965.T"),
+    ]
+
+    for label, ticker in targets:
+        df = fetch_price(ticker)
+        if df is not None:
+            df = add_basic_indicators(df)
+            msg += check_reversal(df, label) + "\n\n"
+        else:
+            msg += f"【{label}】データ取得エラー\n\n"
+
+    # 日付
     today = datetime.date.today().strftime("%Y-%m-%d")
     msg = f"📅 {today}\n\n" + msg
 
