@@ -1,6 +1,7 @@
-feedparser
 yfinance
-requests
-numpy
 pandas
+numpy
+requests
+feedparser
 jpholiday
+ta
