@@ -323,36 +323,70 @@ def add_basic_indicators(df):
 def check_reversal(df, label):
     last = df.iloc[-1]
     prev = df.iloc[-2]
+
+    # === 生データ抽出 ===
+    price = float(last["Close"])
+    price_prev = float(prev["Close"])
+    price_diff = price - price_prev
+    price_pct = (price / price_prev - 1) * 100 if price_prev > 0 else 0
+
+    vol_today = float(last["Volume"])
+    vol_avg5 = float(last["VOL5"]) if last["VOL5"] > 0 else 1
+    vol_ratio = vol_today / vol_avg5
+
+    rsi_prev = float(prev["RSI"])
+    rsi_last = float(last["RSI"])
+
+    macd_prev = float(prev["MACD"])
+    macd_last = float(last["MACD"])
+    macd_sig_prev = float(prev["MACD_SIGNAL"])
+    macd_sig_last = float(last["MACD_SIGNAL"])
+
+    timestamp = last.name.strftime("%Y-%m-%d %H:%M")
+
     signals = []
 
-    # 共通ロジック
-    if float(prev["Close"]) < float(prev["MA25"]) and float(last["Close"]) > float(last["MA25"]):
+    # === シグナル判定 ===
+    if price > float(last["MA25"]) and price_prev < float(prev["MA25"]):
         signals.append("25日線上抜け")
 
-    if float(prev["RSI"]) < 40 < float(last["RSI"]):
-        signals.append("RSI反転")
+    if rsi_prev < 40 < rsi_last:
+        signals.append(f"RSI反転（{rsi_prev:.1f} → {rsi_last:.1f}）")
 
-    if float(last["Volume"]) > 1.5 * float(last["VOL5"]):
-        signals.append("出来高急増")
+    if vol_ratio > 1.5:
+        signals.append(f"出来高急増（{vol_ratio:.2f}倍）")
 
-    if float(prev["MACD"]) < float(prev["MACD_SIGNAL"]) and float(last["MACD"]) > float(last["MACD_SIGNAL"]):
+    if macd_prev < macd_sig_prev and macd_last > macd_sig_last:
         signals.append("MACDゴールデンクロス")
 
-    # 浜松ホトニクスだけ追加ロジック
+    # 浜松ホトニクスだけ追加
     if label == "浜松ホトニクス":
-        if 1650 <= float(last["Close"]) <= 1700:
+        if 1650 <= price <= 1700:
             signals.append("押し目価格帯（1650〜1700）")
-        if float(last["RSI"]) < 40:
-            signals.append("RSI売られすぎ")
-        if float(last["Volume"]) < float(last["VOL5"]) * 0.8:
-            signals.append("出来高減少（売り枯れ）")
-        if float(last["Low"]) < float(prev["Low"]) and float(last["Close"]) > float(last["Open"]):
+        if rsi_last < 40:
+            signals.append(f"RSI売られすぎ（{rsi_last:.1f}）")
+        if vol_ratio < 0.8:
+            signals.append(f"出来高減少（{vol_ratio:.2f}倍）")
+        if float(last["Low"]) < float(prev["Low"]) and price > float(last["Open"]):
             signals.append("下ヒゲ陽線（反転初期）")
 
+    # === 出力フォーマット ===
+    msg = f"【{label} 反転シグナル】\n"
+    msg += f"- 時刻：{timestamp}\n"
+    msg += f"- 株価：{price:.0f} 円（前日比 {price_pct:+.2f}% / {price_diff:+.0f} 円）\n"
+    msg += f"- 出来高：{vol_ratio:.2f} 倍（今日 {vol_today:,.0f} / 平均 {vol_avg5:,.0f}）\n"
+    msg += f"- RSI：{rsi_prev:.1f} → {rsi_last:.1f}\n"
+    msg += f"- MACD：{macd_prev:.2f} → {macd_last:.2f}\n"
+
     if signals:
-        return f"【{label} 反転シグナル】\n- " + "\n- ".join(signals)
+        msg += "- 材料：\n"
+        for s in signals:
+            msg += f"   • {s}\n"
     else:
-        return f"【{label}】反転シグナルなし"
+        msg += "- 材料：なし\n"
+
+    return msg
+
 
 # ============================
 # メイン処理（TOP3＋ETF＋反転を1本化）
