@@ -304,7 +304,9 @@ def classify(gap, news_score, ai_score):
 # ============================
 def add_basic_indicators(df):
     df = df.copy()
-    close = df["Close"]
+
+    # ★ これが重要：Close を Series に強制変換
+    close = df["Close"].squeeze()
 
     df["MA25"] = close.rolling(25).mean()
     df["VOL5"] = df["Volume"].rolling(5).mean()
@@ -317,6 +319,7 @@ def add_basic_indicators(df):
     df["MACD_SIGNAL"] = macd.macd_signal()
 
     return df
+
 
 
 def check_reversal(df, label):
