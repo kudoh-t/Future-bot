@@ -531,37 +531,213 @@ def main():
     # ============================
     reversal_list = []
 
+    # 監視対象（反転＋過熱）
     targets = [
+        ("アドバンテスト", "6857.T"),
+        ("ファナック", "6954.T"),
+        ("安川電機", "6506.T"),
+        ("トヨタ", "7203.T"),
         ("フジクラ", "5803.T"),
-        ("村田製作所", "6981.T"),
         ("住友電工", "5802.T"),
+        ("村田製作所", "6981.T"),
         ("浜松ホトニクス", "6965.T"),
+        ("IHI", "7013.T"),
+        ("TDK", "6762.T"),
     ]
 
+    # --- 反転強度ラベル ---
+    def classify_reversal_strength(strength):
+        if strength > 2.0:
+            return "強"
+        elif strength > 1.0:
+            return "中"
+        else:
+            return "弱"
+
+    # --- 過熱シグナル ---
+    def check_overheat(df, label):
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        price = float(last["Close"])
+        price_prev = float(prev["Close"])
+        gap = (price / price_prev - 1) * 100 if price_prev > 0 else 0
+
+        rsi = float(last["RSI"])
+        vol_today = float(last["Volume"])
+        vol_avg5 = float(last["VOL5"]) if float(last["VOL5"]) > 0 else 1
+        vol_ratio = vol_today / vol_avg5
+
+        macd_prev = float(prev["MACD"])
+        macd_last = float(last["MACD"])
+        macd_diff = macd_last - macd_prev
+
+        timestamp = last.name.strftime("%Y-%m-%d %H:%M")
+
+        level = 0
+        reasons = []
+
+        # RSI
+        if rsi > 80:
+            level = max(level, 3)
+            reasons.append(f"RSI過熱（{rsi:.1f}）")
+        elif rsi > 75:
+            level = max(level, 2)
+            reasons.append(f"RSI高水準（{rsi:.1f}）")
+        elif rsi > 70:
+            level = max(level, 1)
+            reasons.append(f"RSI上昇（{rsi:.1f}）")
+
+        # 乖離
+        if gap > 20:
+            level = max(level, 3)
+            reasons.append(f"5日乖離 +{gap:.1f}%（異常値）")
+        elif gap > 10:
+            level = max(level, 2)
+            reasons.append(f"5日乖離 +{gap:.1f}%")
+        elif gap > 5:
+            level = max(level, 1)
+            reasons.append(f"5日乖離 +{gap:.1f}%")
+
+        # 出来高減少で上昇
+        if vol_ratio < 0.8 and price > price_prev:
+            level = max(level, 3)
+            reasons.append(f"出来高減少（{vol_ratio:.2f}倍）で上昇")
+
+        if level == 0:
+            return None
+
+        msg = f"■ {label}（過熱 Lv{level}）\n"
+        msg += f"- 取得時刻：{timestamp}\n"
+        msg += f"- 株価：{price:.0f} 円（前日比 {gap:+.2f}%）\n"
+        msg += f"- 出来高：{vol_today:,.0f}（5日平均 {vol_avg5:,.0f} / 比率 {vol_ratio:.2f}）\n"
+        msg += f"- RSI：{rsi:.1f}\n"
+        msg += f"- MACD前日比：{macd_diff:+.2f}\n"
+        msg += "- 危険理由：\n"
+        for r in reasons:
+            msg += f"   • {r}\n"
+
+        return msg, level
+
+    # --- 反転シグナル（RSI前日比・MACD前日比・出来高絶対値入り） ---
+    def check_reversal(df, label):
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        price = float(last["Close"])
+        price_prev = float(prev["Close"])
+        price_diff = price - price_prev
+        price_pct = (price / price_prev - 1) * 100 if price_prev > 0 else 0
+
+        vol_today = float(last["Volume"])
+        vol_avg5 = float(last["VOL5"]) if float(last["VOL5"]) > 0 else 1
+        vol_ratio = vol_today / vol_avg5
+
+        rsi_prev = float(prev["RSI"])
+        rsi_last = float(last["RSI"])
+        rsi_diff = rsi_last - rsi_prev
+
+        macd_prev = float(prev["MACD"])
+        macd_last = float(last["MACD"])
+        macd_diff = macd_last - macd_prev
+
+        timestamp = last.name.strftime("%Y-%m-%d %H:%M")
+
+        signals = []
+
+        if price > float(last["MA25"]) and price_prev < float(prev["MA25"]):
+            signals.append("25日線上抜け")
+
+        if rsi_prev < 40 < rsi_last:
+            signals.append(f"RSI反転（{rsi_prev:.1f} → {rsi_last:.1f}）")
+
+        if vol_ratio > 1.5:
+            signals.append(f"出来高急増（{vol_ratio:.2f}倍）")
+
+        if macd_prev < macd_last:
+            signals.append("MACD上昇")
+
+        if macd_prev < float(prev["MACD_SIGNAL"]) and macd_last > float(last["MACD_SIGNAL"]):
+            signals.append("MACDゴールデンクロス")
+
+        if label == "浜松ホトニクス":
+            if 1650 <= price <= 1700:
+                signals.append("押し目価格帯（1650〜1700）")
+            if rsi_last < 40:
+                signals.append(f"RSI売られすぎ（{rsi_last:.1f}）")
+            if vol_ratio < 0.8:
+                signals.append(f"出来高減少（{vol_ratio:.2f}倍）")
+            if float(last["Low"]) < float(prev["Low"]) and price > float(last["Open"]):
+                signals.append("下ヒゲ陽線（反転初期）")
+
+        strength = vol_ratio + (rsi_diff / 10) + (macd_diff / 100)
+
+        msg = f"【{label} 反転シグナル】\n"
+        msg += f"- 取得時刻：{timestamp}\n"
+        msg += f"- 株価：{price:.0f} 円（前日比 {price_pct:+.2f}% / {price_diff:+.0f} 円）\n"
+        msg += f"- 出来高：{vol_today:,.0f}（5日平均 {vol_avg5:,.0f} / 比率 {vol_ratio:.2f}）\n"
+        msg += f"- RSI：{rsi_prev:.1f} → {rsi_last:.1f}（前日比 {rsi_diff:+.2f}）\n"
+        msg += f"- MACD：{macd_prev:.2f} → {macd_last:.2f}（前日比 {macd_diff:+.2f}）\n"
+
+        if signals:
+            msg += "- 材料：\n"
+            for s in signals:
+                msg += f"   • {s}\n"
+        else:
+            msg += "- 材料：なし\n"
+
+        return msg, strength
+
+    # --- 反転処理 ---
     for label, ticker in targets:
         df = fetch_price(ticker)
         if df is not None:
             df = add_basic_indicators(df)
             msg_rev, strength = check_reversal(df, label)
+
+            strength_label = classify_reversal_strength(strength)
+            msg_rev = msg_rev.replace("反転シグナル】", f"反転シグナル（{strength_label}）】")
+
             reversal_list.append((label, msg_rev, strength))
         else:
             reversal_list.append((label, f"【{label}】データ取得エラー", -999))
 
-    # 強い順に並べる
     reversal_list.sort(key=lambda x: x[2], reverse=True)
 
     msg += "【反転シグナル（強い順）】\n\n"
-
     for _, m, _ in reversal_list:
         msg += m + "\n\n"
 
-        # 結論
     top_label, _, _ = reversal_list[0]
-    msg += f"【本日の結論】\n→ 最も反転の強さが見られたのは **{top_label}** です。\n"
+    msg += f"【本日の結論】\n→ 最も反転の強さが見られたのは **{top_label}** です。\n\n"
+
+    # ============================
+    # 過熱シグナル
+    # ============================
+    msg += "【過熱シグナル（天井圏・警戒）】\n\n"
+
+    overheat_list = []
+    for label, ticker in targets:
+        df = fetch_price(ticker)
+        if df is not None:
+            df = add_basic_indicators(df)
+            result = check_overheat(df, label)
+            if result:
+                msg_oh, level = result
+                overheat_list.append((label, msg_oh, level))
+
+    overheat_list.sort(key=lambda x: x[2], reverse=True)
+
+    if overheat_list:
+        for _, m, _ in overheat_list:
+            msg += m + "\n"
+    else:
+        msg += "（過熱シグナルなし）\n"
 
     send_line(msg)
 
 
 if __name__ == "__main__":
     main()
+    
 
